@@ -1,0 +1,147 @@
+{% extends "dashboard_base.html" %}
+{% block title %}{{ form_title }} | ExpenseFlow{% endblock %}
+
+{% block content %}
+<!-- PAGE HEADER -->
+<header class="page-header">
+    <div>
+        <div class="header-badge">
+            <i class="fa-solid fa-pen-ruler"></i>
+            <span>EXPENSE MANAGEMENT</span>
+        </div>
+        <h1>{{ form_title }}</h1>
+        <p class="header-subtitle">{{ 'Update transaction details to keep your financial records accurate.' if form_title == 'Edit expense' else 'Record a new transaction to track your spending habits in real time.' }}</p>
+    </div>
+    <div class="header-actions">
+        <a class="button button-secondary" href="{{ url_for('expenses') }}">
+            <i class="fa-solid fa-arrow-left"></i>
+            <span>Back to Expenses</span>
+        </a>
+    </div>
+</header>
+
+<!-- EXPENSE FORM PANEL -->
+<section class="panel form-panel">
+    <div class="form-card-header">
+        <div class="form-icon-wrap {{ 'purple' if form_title == 'Edit expense' else 'blue' }}">
+            <i class="fa-solid fa-{{ 'pen-to-square' if form_title == 'Edit expense' else 'circle-plus' }}"></i>
+        </div>
+        <div>
+            <span class="eyebrow">{{ 'UPDATE RECORD' if form_title == 'Edit expense' else 'NEW TRANSACTION' }}</span>
+            <h2>{{ form_title }}</h2>
+        </div>
+    </div>
+
+    <form class="app-form" method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="form-grid">
+            <!-- Amount -->
+            <div class="form-field-group">
+                <label for="amount">
+                    <span>Expense Amount</span>
+                    <span class="required-indicator">*</span>
+                </label>
+                <div class="input-icon-wrap currency-field">
+                    <span class="input-symbol">&#8377;</span>
+                    <input
+                        type="number"
+                        id="amount"
+                        name="amount"
+                        min="0.01"
+                        step="0.01"
+                        value="{{ expense.get('amount', '') }}"
+                        placeholder="0.00"
+                        autocomplete="off"
+                        required
+                    >
+                </div>
+                <small class="field-hint">Enter the total amount spent in INR (max 2 decimals).</small>
+            </div>
+
+            <!-- Date -->
+            <div class="form-field-group">
+                <label for="expense_date">
+                    <span>Expense Date</span>
+                    <span class="required-indicator">*</span>
+                </label>
+                <div class="input-icon-wrap">
+                    <i class="fa-regular fa-calendar input-icon"></i>
+                    <input
+                        type="date"
+                        id="expense_date"
+                        name="expense_date"
+                        value="{{ expense.get('expense_date', '') }}"
+                        required
+                    >
+                </div>
+                <small class="field-hint">Date when this expense occurred.</small>
+            </div>
+
+            <!-- Category -->
+            <div class="form-field-group">
+                <label for="category">
+                    <span>Category</span>
+                    <span class="required-indicator">*</span>
+                </label>
+                <div class="input-icon-wrap">
+                    <i class="fa-solid fa-shapes input-icon"></i>
+                    <select id="category" name="category" required>
+                        <option value="">Choose a category</option>
+                        {% for category in categories %}{% set is_sel = (expense.get('category') == category) %}
+                            <option value="{{ category }}" {{ 'selected' if is_sel else '' }}>{{ category }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <small class="field-hint">Select the best matching spending category.</small>
+            </div>
+
+            <!-- Payment Method -->
+            <div class="form-field-group">
+                <label for="payment_method">
+                    <span>Payment Method</span>
+                    <span class="required-indicator">*</span>
+                </label>
+                <div class="input-icon-wrap">
+                    <i class="fa-solid fa-credit-card input-icon"></i>
+                    <select id="payment_method" name="payment_method" required>
+                        <option value="">Choose payment method</option>
+                        {% for method in payment_methods %}{% set is_sel = (expense.get('payment_method') == method) %}
+                            <option value="{{ method }}" {{ 'selected' if is_sel else '' }}>{{ method }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <small class="field-hint">How was this transaction paid?</small>
+            </div>
+
+            <!-- Description -->
+            <div class="form-field-group form-full">
+                <label for="description">
+                    <span>Description / Notes</span>
+                    <span class="optional-badge">Optional</span>
+                </label>
+                <div class="textarea-icon-wrap">
+                    <textarea
+                        id="description"
+                        name="description"
+                        maxlength="255"
+                        rows="3"
+                        placeholder="Add notes, store name, or specifics..."
+                    >{{ expense.get('description', '') or '' }}</textarea>
+                </div>
+                <small class="field-hint">Maximum 255 characters.</small>
+            </div>
+        </div>
+
+        <div class="form-actions">
+            <a class="button button-ghost" href="{{ url_for('expenses') }}">
+                <i class="fa-solid fa-xmark"></i>
+                <span>Cancel</span>
+            </a>
+            <button class="button button-primary" type="submit">
+                <i class="fa-solid fa-{{ 'floppy-disk' if form_title == 'Edit expense' else 'plus' }}"></i>
+                <span>{{ 'Save Changes' if form_title == 'Edit expense' else 'Add Expense' }}</span>
+            </button>
+        </div>
+    </form>
+</section>
+{% endblock %}

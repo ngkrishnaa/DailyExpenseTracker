@@ -1,0 +1,291 @@
+{% extends "dashboard_base.html" %}
+{% block title %}My Expenses | ExpenseFlow{% endblock %}
+
+{% block content %}
+<!-- PAGE HEADER -->
+<header class="page-header">
+    <div>
+        <div class="header-badge">
+            <i class="fa-solid fa-receipt"></i>
+            <span>SPENDING HISTORY</span>
+        </div>
+        <h1>My Expenses</h1>
+        <p class="header-subtitle">Review, search, and manage your complete expense records.</p>
+    </div>
+    <div class="header-actions">
+        <a class="button button-secondary" href="{{ url_for('export_expenses', search=filters.search, category=filters.category, payment_method=filters.payment_method, date_from=filters.date_from, date_to=filters.date_to, min_amount=filters.min_amount, max_amount=filters.max_amount, sort=filters.sort) }}" id="export-csv-btn" title="Export filtered expenses to CSV">
+            <i class="fa-solid fa-file-csv"></i>
+            <span>Export CSV</span>
+        </a>
+        <a class="button button-primary" href="{{ url_for('add_expense') }}">
+            <i class="fa-solid fa-circle-plus"></i>
+            <span>Add Expense</span>
+        </a>
+    </div>
+</header>
+
+<!-- FILTER & SEARCH PANEL -->
+<section class="panel filter-panel">
+    <form class="filter-form" method="GET" action="{{ url_for('expenses') }}">
+        <div class="filter-header">
+            <div class="filter-title">
+                <i class="fa-solid fa-filter"></i>
+                <span>Advanced Search & Filters</span>
+            </div>
+            {% if filters.search or filters.category or filters.payment_method or filters.date_from or filters.date_to or filters.min_amount or filters.max_amount or (filters.sort and filters.sort != 'newest') %}
+                <a class="filter-clear-link" href="{{ url_for('expenses') }}">
+                    <i class="fa-solid fa-rotate-left"></i>
+                    <span>Reset All</span>
+                </a>
+            {% endif %}
+        </div>
+
+        <div class="filter-grid advanced-filter-grid">
+            <!-- Search -->
+            <div class="filter-field search-field">
+                <i class="fa-solid fa-magnifying-glass field-icon"></i>
+                <input
+                    type="text"
+                    name="search"
+                    value="{{ filters.search }}"
+                    placeholder="Search notes, category, payment..."
+                    autocomplete="off"
+                >
+            </div>
+
+            <!-- Category -->
+            <div class="filter-field">
+                <i class="fa-solid fa-shapes field-icon"></i>
+                <select name="category">
+                    <option value="">All Categories</option>
+                    {% for category in categories %}{% set is_sel = (filters.category == category) %}
+                        <option value="{{ category }}" {{ 'selected' if is_sel else '' }}>{{ category }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- Payment Method -->
+            <div class="filter-field">
+                <i class="fa-solid fa-credit-card field-icon"></i>
+                <select name="payment_method">
+                    <option value="">All Payments</option>
+                    {% for method in payment_methods %}{% set is_sel = (filters.payment_method == method) %}
+                        <option value="{{ method }}" {{ 'selected' if is_sel else '' }}>{{ method }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- Date From -->
+            <div class="filter-field date-field">
+                <i class="fa-regular fa-calendar field-icon"></i>
+                <input
+                    type="date"
+                    name="date_from"
+                    value="{{ filters.date_from }}"
+                    title="From Date"
+                >
+            </div>
+
+            <!-- Date To -->
+            <div class="filter-field date-field">
+                <i class="fa-regular fa-calendar-check field-icon"></i>
+                <input
+                    type="date"
+                    name="date_to"
+                    value="{{ filters.date_to }}"
+                    title="To Date"
+                >
+            </div>
+
+            <!-- Min Amount -->
+            <div class="filter-field amount-field">
+                <span class="field-currency-icon">&#8377;</span>
+                <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    name="min_amount"
+                    value="{{ filters.min_amount }}"
+                    placeholder="Min ₹"
+                    title="Minimum Amount (₹)"
+                >
+            </div>
+
+            <!-- Max Amount -->
+            <div class="filter-field amount-field">
+                <span class="field-currency-icon">&#8377;</span>
+                <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    name="max_amount"
+                    value="{{ filters.max_amount }}"
+                    placeholder="Max ₹"
+                    title="Maximum Amount (₹)"
+                >
+            </div>
+
+            <!-- Sort -->
+            <div class="filter-field">
+                <i class="fa-solid fa-arrow-down-wide-short field-icon"></i>
+                <select name="sort">
+                    <option value="newest" {{ 'selected' if filters.sort == 'newest' else '' }}>Newest first</option>
+                    <option value="oldest" {{ 'selected' if filters.sort == 'oldest' else '' }}>Oldest first</option>
+                    <option value="highest" {{ 'selected' if filters.sort == 'highest' else '' }}>Highest amount</option>
+                    <option value="lowest" {{ 'selected' if filters.sort == 'lowest' else '' }}>Lowest amount</option>
+                </select>
+            </div>
+
+            <!-- Actions -->
+            <div class="filter-actions">
+                <button class="button button-primary" type="submit">
+                    <i class="fa-solid fa-check"></i>
+                    <span>Apply</span>
+                </button>
+                <a class="button button-ghost" href="{{ url_for('expenses') }}" title="Clear filters">
+                    <i class="fa-solid fa-rotate-left"></i>
+                    <span>Clear</span>
+                </a>
+            </div>
+        </div>
+
+        <!-- ACTIVE FILTER CHIPS -->
+        {% if filters.search or filters.category or filters.payment_method or filters.date_from or filters.date_to or filters.min_amount or filters.max_amount %}
+            <div class="active-filters-bar">
+                <span class="active-filters-label"><i class="fa-solid fa-tags"></i> Active:</span>
+                {% if filters.search %}
+                    <span class="filter-chip">Search: "{{ filters.search }}" <a class="chip-remove" href="{{ url_for('expenses', search='', category=filters.category, payment_method=filters.payment_method, date_from=filters.date_from, date_to=filters.date_to, min_amount=filters.min_amount, max_amount=filters.max_amount, sort=filters.sort, page=1) }}" title="Remove search filter">&times;</a></span>
+                {% endif %}
+                {% if filters.category %}
+                    <span class="filter-chip">Category: {{ filters.category }} <a class="chip-remove" href="{{ url_for('expenses', search=filters.search, category='', payment_method=filters.payment_method, date_from=filters.date_from, date_to=filters.date_to, min_amount=filters.min_amount, max_amount=filters.max_amount, sort=filters.sort, page=1) }}" title="Remove category filter">&times;</a></span>
+                {% endif %}
+                {% if filters.payment_method %}
+                    <span class="filter-chip">Payment: {{ filters.payment_method }} <a class="chip-remove" href="{{ url_for('expenses', search=filters.search, category=filters.category, payment_method='', date_from=filters.date_from, date_to=filters.date_to, min_amount=filters.min_amount, max_amount=filters.max_amount, sort=filters.sort, page=1) }}" title="Remove payment filter">&times;</a></span>
+                {% endif %}
+                {% if filters.date_from %}
+                    <span class="filter-chip">From: {{ filters.date_from }} <a class="chip-remove" href="{{ url_for('expenses', search=filters.search, category=filters.category, payment_method=filters.payment_method, date_from='', date_to=filters.date_to, min_amount=filters.min_amount, max_amount=filters.max_amount, sort=filters.sort, page=1) }}" title="Remove start date">&times;</a></span>
+                {% endif %}
+                {% if filters.date_to %}
+                    <span class="filter-chip">To: {{ filters.date_to }} <a class="chip-remove" href="{{ url_for('expenses', search=filters.search, category=filters.category, payment_method=filters.payment_method, date_from=filters.date_from, date_to='', min_amount=filters.min_amount, max_amount=filters.max_amount, sort=filters.sort, page=1) }}" title="Remove end date">&times;</a></span>
+                {% endif %}
+                {% if filters.min_amount %}
+                    <span class="filter-chip">Min: &#8377;{{ filters.min_amount }} <a class="chip-remove" href="{{ url_for('expenses', search=filters.search, category=filters.category, payment_method=filters.payment_method, date_from=filters.date_from, date_to=filters.date_to, min_amount='', max_amount=filters.max_amount, sort=filters.sort, page=1) }}" title="Remove min amount">&times;</a></span>
+                {% endif %}
+                {% if filters.max_amount %}
+                    <span class="filter-chip">Max: &#8377;{{ filters.max_amount }} <a class="chip-remove" href="{{ url_for('expenses', search=filters.search, category=filters.category, payment_method=filters.payment_method, date_from=filters.date_from, date_to=filters.date_to, min_amount=filters.min_amount, max_amount='', sort=filters.sort, page=1) }}" title="Remove max amount">&times;</a></span>
+                {% endif %}
+                <a class="clear-all-chip-link" href="{{ url_for('expenses') }}">Clear All</a>
+            </div>
+        {% endif %}
+    </form>
+</section>
+
+<!-- RESULTS SUMMARY STATS -->
+<div class="expenses-summary-banner">
+    <div class="summary-stat-item">
+        <span class="stat-meta-label">MATCHING RECORDS</span>
+        <strong class="stat-meta-value">{{ total_count }} transaction{{ '' if total_count == 1 else 's' }}</strong>
+    </div>
+    <div class="summary-stat-divider"></div>
+    <div class="summary-stat-item">
+        <span class="stat-meta-label">FILTERED TOTAL</span>
+        <strong class="stat-meta-value highlight">{{ total|inr }}</strong>
+    </div>
+</div>
+
+<!-- EXPENSES TABLE PANEL -->
+<section class="panel table-panel">
+    {% if expenses %}
+        <div class="expense-table-wrap">
+            <table class="expense-table">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Category</th>
+                        <th>Description</th>
+                        <th>Payment Method</th>
+                        <th class="align-right">Amount</th>
+                        <th class="align-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for expense in expenses %}
+                        <tr class="expense-row">
+                            <td class="expense-date-cell">
+                                <i class="fa-regular fa-calendar"></i>
+                                <span>{{ expense.expense_date.strftime('%d %b %Y') }}</span>
+                            </td>
+                            <td>
+                                <span class="category-pill">{{ expense.category }}</span>
+                            </td>
+                            <td>
+                                <span class="expense-description-text">{{ expense.description or '—' }}</span>
+                            </td>
+                            <td>
+                                <span class="tag"><i class="fa-solid fa-wallet"></i> {{ expense.payment_method }}</span>
+                            </td>
+                            <td class="amount align-right">{{ expense.amount|inr }}</td>
+                            <td class="actions align-right">
+                                <div class="action-btn-group">
+                                    <a class="action-btn edit-btn" href="{{ url_for('edit_expense', expense_id=expense.id) }}" title="Edit expense">
+                                        <i class="fa-solid fa-pen-to-square"></i>
+                                        <span>Edit</span>
+                                    </a>
+                                    <form method="POST" action="{{ url_for('delete_expense', expense_id=expense.id) }}" onsubmit="return confirm('Delete this expense permanently?');" class="inline-form">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <button class="action-btn delete-btn" type="submit" title="Delete expense">
+                                            <i class="fa-regular fa-trash-can"></i>
+                                            <span>Delete</span>
+                                        </button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="empty-state">
+            <div class="empty-icon"><i class="fa-solid fa-magnifying-glass"></i></div>
+            <h3>No expenses found</h3>
+            <p>Try adjusting your search query or filters, or record a new expense.</p>
+            <a class="button button-primary" href="{{ url_for('add_expense') }}">
+                <i class="fa-solid fa-circle-plus"></i>
+                <span>Add Expense</span>
+            </a>
+        </div>
+    {% endif %}
+</section>
+
+<!-- PAGINATION -->
+{% if total_pages > 1 %}
+    <nav class="pagination" aria-label="Expense pagination">
+        {% if page > 1 %}
+            <a class="pagination-btn" href="{{ url_for('expenses', search=filters.search, category=filters.category, payment_method=filters.payment_method, date_from=filters.date_from, date_to=filters.date_to, min_amount=filters.min_amount, max_amount=filters.max_amount, sort=filters.sort, page=page-1) }}">
+                <i class="fa-solid fa-chevron-left"></i>
+                <span>Previous</span>
+            </a>
+        {% else %}
+            <span class="pagination-btn disabled">
+                <i class="fa-solid fa-chevron-left"></i>
+                <span>Previous</span>
+            </span>
+        {% endif %}
+
+        <span class="pagination-status">Page {{ page }} of {{ total_pages }}</span>
+
+        {% if page < total_pages %}
+            <a class="pagination-btn" href="{{ url_for('expenses', search=filters.search, category=filters.category, payment_method=filters.payment_method, date_from=filters.date_from, date_to=filters.date_to, min_amount=filters.min_amount, max_amount=filters.max_amount, sort=filters.sort, page=page+1) }}">
+                <span>Next</span>
+                <i class="fa-solid fa-chevron-right"></i>
+            </a>
+        {% else %}
+            <span class="pagination-btn disabled">
+                <span>Next</span>
+                <i class="fa-solid fa-chevron-right"></i>
+            </span>
+        {% endif %}
+    </nav>
+{% endif %}
+{% endblock %}

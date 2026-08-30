@@ -1,0 +1,321 @@
+{% extends "dashboard_base.html" %}
+{% block title %}Dashboard | ExpenseFlow{% endblock %}
+
+{% block content %}
+<!-- DASHBOARD HEADER -->
+<header class="page-header">
+    <div>
+        <div class="header-badge">
+            <i class="fa-solid fa-gauge-high"></i>
+            <span>OVERVIEW</span>
+        </div>
+        <h1>Good to see you, {{ session.get('user_name') }}.</h1>
+        <p class="header-subtitle">Here is your financial pulse and spending summary for this month.</p>
+    </div>
+    <div class="header-actions">
+        <a class="button button-primary" href="{{ url_for('add_expense') }}">
+            <i class="fa-solid fa-circle-plus"></i>
+            <span>Add Expense</span>
+        </a>
+    </div>
+</header>
+
+<!-- QUICK ACTIONS BAR -->
+<section class="quick-actions-bar">
+    <a class="quick-action-chip" href="{{ url_for('add_expense') }}">
+        <span class="chip-icon blue"><i class="fa-solid fa-circle-plus"></i></span>
+        <span>Add Expense</span>
+    </a>
+    <a class="quick-action-chip" href="{{ url_for('expenses') }}">
+        <span class="chip-icon purple"><i class="fa-solid fa-receipt"></i></span>
+        <span>My Expenses</span>
+    </a>
+    <a class="quick-action-chip" href="{{ url_for('budget') }}">
+        <span class="chip-icon emerald"><i class="fa-solid fa-wallet"></i></span>
+        <span>{{ 'Manage Budget' if budget else 'Set Budget' }}</span>
+    </a>
+    <a class="quick-action-chip" href="{{ url_for('reports') }}">
+        <span class="chip-icon amber"><i class="fa-solid fa-chart-column"></i></span>
+        <span>Spending Reports</span>
+    </a>
+</section>
+
+<!-- FINANCIAL SUMMARY CARDS -->
+<section class="summary-grid">
+    <!-- Card 1: This Month -->
+    <article class="summary-card">
+        <div class="card-header-row">
+            <span class="card-label">THIS MONTH</span>
+            <div class="card-icon-box blue"><i class="fa-solid fa-calendar-days"></i></div>
+        </div>
+        <strong class="card-value">{{ monthly_expenses|inr }}</strong>
+        <div class="card-footer-meta">
+            <i class="fa-solid fa-receipt"></i>
+            <span>Across {{ expense_count }} transaction{{ '' if expense_count == 1 else 's' }}</span>
+        </div>
+    </article>
+
+    <!-- Card 2: Today -->
+    <article class="summary-card">
+        <div class="card-header-row">
+            <span class="card-label">TODAY'S SPENDING</span>
+            <div class="card-icon-box purple"><i class="fa-solid fa-bolt"></i></div>
+        </div>
+        <strong class="card-value">{{ today_expenses|inr }}</strong>
+        <div class="card-footer-meta">
+            <i class="fa-solid fa-clock"></i>
+            <span>Real-time daily tracking</span>
+        </div>
+    </article>
+
+    <!-- Card 3: Monthly Budget -->
+    <article class="summary-card">
+        <div class="card-header-row">
+            <span class="card-label">MONTHLY BUDGET</span>
+            <div class="card-icon-box emerald"><i class="fa-solid fa-wallet"></i></div>
+        </div>
+        <strong class="card-value">{{ budget|inr if budget else 'Not set' }}</strong>
+        <div class="card-footer-meta">
+            <a class="card-link" href="{{ url_for('budget') }}">
+                <span>{{ 'Manage limit' if budget else 'Set a limit' }}</span>
+                <i class="fa-solid fa-arrow-right"></i>
+            </a>
+        </div>
+    </article>
+
+    <!-- Card 4: Remaining Budget -->
+    <article class="summary-card {{ budget_status }}">
+        <div class="card-header-row">
+            <span class="card-label">REMAINING BALANCE</span>
+            <div class="card-icon-box {{ 'rose' if budget_status == 'over' else ('amber' if budget_status == 'warning' else 'cyan') }}">
+                <i class="fa-solid fa-scale-balanced"></i>
+            </div>
+        </div>
+        <strong class="card-value">{{ remaining|inr if budget else '—' }}</strong>
+        <div class="card-footer-meta">
+            {% if budget %}
+                {% if budget_status == 'over' %}
+                    <span class="status-pill over"><i class="fa-solid fa-triangle-exclamation"></i> Budget exceeded</span>
+                {% elif budget_status == 'warning' %}
+                    <span class="status-pill warning"><i class="fa-solid fa-circle-exclamation"></i> {{ budget_percentage|round(0)|int }}% used</span>
+                {% else %}
+                    <span class="status-pill normal"><i class="fa-solid fa-circle-check"></i> {{ budget_percentage|round(0)|int }}% used</span>
+                {% endif %}
+            {% else %}
+                <span class="card-hint">Set a budget to track progress</span>
+            {% endif %}
+        </div>
+    </article>
+</section>
+
+<!-- SMART FINANCIAL INSIGHTS SECTION -->
+<section class="panel insights-panel">
+    <div class="panel-heading">
+        <div class="panel-title-wrap">
+            <div class="panel-icon-wrap purple"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
+            <div>
+                <span class="eyebrow">FINANCIAL INTELLIGENCE</span>
+                <h2>Smart Financial Insights</h2>
+            </div>
+        </div>
+        <span class="insights-live-badge">
+            <i class="fa-solid fa-bolt"></i>
+            <span>Live Analysis</span>
+        </span>
+    </div>
+
+    {% if total_lifetime_count and total_lifetime_count > 0 %}
+        <div class="insights-grid">
+            {% for insight in financial_insights %}
+                <article class="insight-card {{ insight.type }}">
+                    <div class="insight-header">
+                        <div class="insight-icon-box {{ insight.type }}">
+                            <i class="{{ insight.icon }}"></i>
+                        </div>
+                        <span class="insight-badge {{ insight.type }}">{{ insight.badge }}</span>
+                    </div>
+                    <h3 class="insight-title">{{ insight.title }}</h3>
+                    <p class="insight-text">{{ insight.text }}</p>
+                </article>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="empty-compact insights-empty">
+            <div class="empty-compact-icon purple"><i class="fa-solid fa-lightbulb"></i></div>
+            <p class="empty-compact-title">Welcome to Financial Insights!</p>
+            <p class="empty-compact-desc">Log your first expense to activate personalized monthly trends, category breakdowns, and smart spending insights.</p>
+            <a class="button button-primary" href="{{ url_for('add_expense') }}">
+                <i class="fa-solid fa-circle-plus"></i>
+                <span>Log First Expense</span>
+            </a>
+        </div>
+    {% endif %}
+</section>
+
+<!-- MAIN DASHBOARD PANELS (BUDGET + CATEGORIES) -->
+<section class="dashboard-grid">
+    <!-- Budget Progress Panel -->
+    <article class="panel budget-panel">
+        <div class="panel-heading">
+            <div class="panel-title-wrap">
+                <div class="panel-icon-wrap emerald"><i class="fa-solid fa-bullseye"></i></div>
+                <div>
+                    <span class="eyebrow">MONTHLY TARGET</span>
+                    <h2>Budget Progress</h2>
+                </div>
+            </div>
+            <a class="panel-action-btn" href="{{ url_for('budget') }}">
+                <i class="fa-solid fa-sliders"></i>
+                <span>Manage</span>
+            </a>
+        </div>
+
+        {% if budget %}
+            <div class="budget-card-content">
+                <div class="budget-numbers">
+                    <div class="budget-stat">
+                        <span class="stat-label">Spent this month</span>
+                        <strong class="stat-spent">{{ monthly_expenses|inr }}</strong>
+                    </div>
+                    <div class="budget-divider">/</div>
+                    <div class="budget-stat">
+                        <span class="stat-label">Total budget</span>
+                        <strong class="stat-total">{{ budget|inr }}</strong>
+                    </div>
+                </div>
+
+                <div class="progress-track-wrapper">
+                    <div class="progress-track">
+                        <span class="progress-fill {{ budget_status }}" style="width: {{ budget_percentage }}%"></span>
+                    </div>
+                    <div class="progress-meta">
+                        <span class="progress-percent">{{ budget_percentage|round(0)|int }}% used</span>
+                        <span class="progress-remaining {{ budget_status }}">
+                            {{ remaining|inr }} {{ 'over budget' if remaining < 0 else 'remaining' }}
+                        </span>
+                    </div>
+                </div>
+            </div>
+        {% else %}
+            <div class="empty-compact">
+                <div class="empty-compact-icon emerald"><i class="fa-solid fa-wallet"></i></div>
+                <p class="empty-compact-title">No monthly budget set</p>
+                <p class="empty-compact-desc">A monthly budget turns spending into structured savings progress.</p>
+                <a class="button button-secondary" href="{{ url_for('budget') }}">
+                    <i class="fa-solid fa-plus"></i>
+                    <span>Set Monthly Budget</span>
+                </a>
+            </div>
+        {% endif %}
+    </article>
+
+    <!-- Spending by Category Panel -->
+    <article class="panel category-panel">
+        <div class="panel-heading">
+            <div class="panel-title-wrap">
+                <div class="panel-icon-wrap blue"><i class="fa-solid fa-chart-pie"></i></div>
+                <div>
+                    <span class="eyebrow">THIS MONTH</span>
+                    <h2>Spending by Category</h2>
+                </div>
+            </div>
+            <a class="panel-action-btn" href="{{ url_for('reports') }}">
+                <i class="fa-solid fa-chart-simple"></i>
+                <span>Reports</span>
+            </a>
+        </div>
+
+        {% if category_spending %}
+            <div class="category-list">
+                {% for item in category_spending %}
+                    {% set pct = (item.total / monthly_expenses * 100)|round(0)|int if monthly_expenses else 0 %}
+                    <div class="category-row">
+                        <div class="category-info">
+                            <span class="category-pill">{{ item.category }}</span>
+                            <span class="category-pct">{{ pct }}%</span>
+                        </div>
+                        <div class="category-bar-wrap">
+                            <div class="category-bar">
+                                <i style="width: {{ pct }}%"></i>
+                            </div>
+                            <strong class="category-total">{{ item.total|inr }}</strong>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="empty-compact">
+                <div class="empty-compact-icon blue"><i class="fa-solid fa-chart-pie"></i></div>
+                <p class="empty-compact-title">No category data yet</p>
+                <p class="empty-compact-desc">Add your first expense to see your category distribution.</p>
+                <a class="button button-secondary" href="{{ url_for('add_expense') }}">
+                    <i class="fa-solid fa-circle-plus"></i>
+                    <span>Add First Expense</span>
+                </a>
+            </div>
+        {% endif %}
+    </article>
+</section>
+
+<!-- RECENT TRANSACTIONS PANEL -->
+<section class="panel table-panel">
+    <div class="panel-heading">
+        <div class="panel-title-wrap">
+            <div class="panel-icon-wrap purple"><i class="fa-solid fa-clock-rotate-left"></i></div>
+            <div>
+                <span class="eyebrow">TRANSACTION LOG</span>
+                <h2>Recent Expenses</h2>
+            </div>
+        </div>
+        <a class="button button-secondary" href="{{ url_for('expenses') }}">
+            <i class="fa-solid fa-list-ul"></i>
+            <span>View all</span>
+        </a>
+    </div>
+
+    {% if recent_expenses %}
+        <div class="expense-table-wrap">
+            <table class="expense-table">
+                <thead>
+                    <tr>
+                        <th>Expense Details</th>
+                        <th>Date</th>
+                        <th>Payment Method</th>
+                        <th class="align-right">Amount</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for expense in recent_expenses %}
+                        <tr>
+                            <td>
+                                <div class="expense-cell-details">
+                                    <span class="category-pill">{{ expense.category }}</span>
+                                    <span class="expense-desc">{{ expense.description or 'No description' }}</span>
+                                </div>
+                            </td>
+                            <td class="expense-date-cell">
+                                <i class="fa-regular fa-calendar"></i>
+                                <span>{{ expense.expense_date.strftime('%d %b %Y') }}</span>
+                            </td>
+                            <td>
+                                <span class="tag"><i class="fa-solid fa-credit-card"></i> {{ expense.payment_method }}</span>
+                            </td>
+                            <td class="amount align-right">{{ expense.amount|inr }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="empty-state">
+            <div class="empty-icon"><i class="fa-solid fa-receipt"></i></div>
+            <h3>Start your financial story</h3>
+            <p>Add your first expense to see useful patterns, totals, and budget progress.</p>
+            <a class="button button-primary" href="{{ url_for('add_expense') }}">
+                <i class="fa-solid fa-circle-plus"></i>
+                <span>Add your first expense</span>
+            </a>
+        </div>
+    {% endif %}
+</section>
+{% endblock %}

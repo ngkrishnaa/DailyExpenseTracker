@@ -1,0 +1,273 @@
+{% extends "dashboard_base.html" %}
+{% block title %}Spending Reports | ExpenseFlow{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{% endblock %}
+
+{% block content %}
+<!-- PAGE HEADER -->
+<header class="page-header">
+    <div>
+        <div class="header-badge">
+            <i class="fa-solid fa-chart-column"></i>
+            <span>ANALYTICS & REPORTS</span>
+        </div>
+        <h1>Spending reports</h1>
+        <p class="header-subtitle">Understand where your money goes, discover spending patterns, and plan with confidence.</p>
+    </div>
+    <div class="header-actions">
+        <a class="button button-secondary" href="{{ url_for('expenses') }}">
+            <i class="fa-solid fa-receipt"></i>
+            <span>View All Expenses</span>
+        </a>
+    </div>
+</header>
+
+<!-- FILTER PANEL -->
+<section class="panel filter-panel">
+    <form class="report-filter" method="GET" action="{{ url_for('reports') }}">
+        <div class="filter-field">
+            <i class="fa-solid fa-calendar-days field-icon"></i>
+            <select name="period" id="period" onchange="this.form.submit()">
+                <option value="current" {% if period == 'current' %}selected{% endif %}>Current Month</option>
+                <option value="previous" {% if period == 'previous' %}selected{% endif %}>Previous Month</option>
+                <option value="custom" {% if period == 'custom' %}selected{% endif %}>Custom Date Range</option>
+            </select>
+        </div>
+
+        <div class="filter-field date-field">
+            <i class="fa-regular fa-calendar field-icon"></i>
+            <input type="date" name="date_from" value="{{ date_from }}" title="Start Date">
+        </div>
+
+        <div class="filter-field date-field">
+            <i class="fa-regular fa-calendar-check field-icon"></i>
+            <input type="date" name="date_to" value="{{ date_to }}" title="End Date">
+        </div>
+
+        <div class="filter-actions">
+            <button class="button button-primary" type="submit">
+                <i class="fa-solid fa-arrows-rotate"></i>
+                <span>Update Report</span>
+            </button>
+        </div>
+    </form>
+</section>
+
+<!-- REPORT SUMMARY METRICS -->
+<section class="summary-grid report-summary">
+    <!-- Total Spent -->
+    <article class="summary-card">
+        <div class="card-header-row">
+            <span class="card-label">TOTAL SPENT</span>
+            <div class="card-icon-box blue"><i class="fa-solid fa-wallet"></i></div>
+        </div>
+        <strong class="card-value">{{ total|inr }}</strong>
+        <div class="card-footer-meta">
+            <i class="fa-solid fa-calendar"></i>
+            <span>For selected period</span>
+        </div>
+    </article>
+
+    <!-- Expenses Count -->
+    <article class="summary-card">
+        <div class="card-header-row">
+            <span class="card-label">TRANSACTIONS</span>
+            <div class="card-icon-box purple"><i class="fa-solid fa-receipt"></i></div>
+        </div>
+        <strong class="card-value">{{ count }}</strong>
+        <div class="card-footer-meta">
+            <i class="fa-solid fa-list-check"></i>
+            <span>Recorded entries</span>
+        </div>
+    </article>
+
+    <!-- Top Category -->
+    <article class="summary-card">
+        <div class="card-header-row">
+            <span class="card-label">TOP CATEGORY</span>
+            <div class="card-icon-box emerald"><i class="fa-solid fa-shapes"></i></div>
+        </div>
+        <strong class="card-value">{{ highest_category.category if highest_category else '—' }}</strong>
+        <div class="card-footer-meta">
+            <span>{{ highest_category.total|inr if highest_category else 'No spending recorded' }}</span>
+        </div>
+    </article>
+</section>
+
+<!-- CHARTS GRID -->
+<section class="chart-grid">
+    <!-- Category Breakdown (Doughnut) -->
+    <article class="panel chart-panel">
+        <div class="panel-heading">
+            <div class="panel-title-wrap">
+                <div class="panel-icon-wrap blue"><i class="fa-solid fa-chart-pie"></i></div>
+                <div>
+                    <span class="eyebrow">DISTRIBUTION</span>
+                    <h2>Category spending</h2>
+                </div>
+            </div>
+        </div>
+        <div class="chart-wrap">
+            <canvas id="category-chart"></canvas>
+        </div>
+    </article>
+
+    <!-- Daily Trend (Line) -->
+    <article class="panel chart-panel">
+        <div class="panel-heading">
+            <div class="panel-title-wrap">
+                <div class="panel-icon-wrap emerald"><i class="fa-solid fa-chart-line"></i></div>
+                <div>
+                    <span class="eyebrow">DAILY VELOCITY</span>
+                    <h2>Daily spending</h2>
+                </div>
+            </div>
+        </div>
+        <div class="chart-wrap">
+            <canvas id="daily-chart"></canvas>
+        </div>
+    </article>
+
+    <!-- Monthly Multi-Month Comparison (Bar) -->
+    <article class="panel chart-panel chart-wide">
+        <div class="panel-heading">
+            <div class="panel-title-wrap">
+                <div class="panel-icon-wrap purple"><i class="fa-solid fa-chart-simple"></i></div>
+                <div>
+                    <span class="eyebrow">HISTORICAL COMPARISON</span>
+                    <h2>Monthly spending</h2>
+                </div>
+            </div>
+        </div>
+        <div class="chart-wrap">
+            <canvas id="monthly-chart"></canvas>
+        </div>
+    </article>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const fontFamily = "'Plus Jakarta Sans', 'Inter', sans-serif";
+    Chart.defaults.color = '#94a3b8';
+    Chart.defaults.borderColor = 'rgba(148, 163, 184, 0.1)';
+    Chart.defaults.font.family = fontFamily;
+
+    const category = {{ category_chart|tojson }};
+    const daily = {{ daily_chart|tojson }};
+    const monthly = {{ monthly_chart|tojson }};
+
+    // Category Doughnut Chart
+    const catElem = document.getElementById('category-chart');
+    if (catElem) {
+        new Chart(catElem, {
+            type: 'doughnut',
+            data: {
+                labels: category.labels,
+                datasets: [{
+                    data: category.values,
+                    backgroundColor: [
+                        '#3b82f6', '#818cf8', '#34d399', '#fbbf24', '#fb7185',
+                        '#c084fc', '#22d3ee', '#fb923c', '#a3e635', '#f472b6', '#94a3b8'
+                    ],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            boxWidth: 12,
+                            padding: 14,
+                            color: '#cbd5e1',
+                            font: { size: 11.5, family: fontFamily }
+                        }
+                    }
+                },
+                cutout: '68%'
+            }
+        });
+    }
+
+    // Daily Line Chart
+    const dailyElem = document.getElementById('daily-chart');
+    if (dailyElem) {
+        new Chart(dailyElem, {
+            type: 'line',
+            data: {
+                labels: daily.labels,
+                datasets: [{
+                    label: 'Daily Spending (₹)',
+                    data: daily.values,
+                    borderColor: '#38bdf8',
+                    backgroundColor: 'rgba(56, 189, 248, 0.14)',
+                    fill: true,
+                    tension: 0.35,
+                    borderWidth: 2,
+                    pointBackgroundColor: '#38bdf8',
+                    pointBorderColor: '#07101d',
+                    pointBorderWidth: 2,
+                    pointRadius: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false }
+                },
+                scales: {
+                    x: {
+                        grid: { display: false },
+                        ticks: { font: { size: 11 } }
+                    },
+                    y: {
+                        grid: { color: 'rgba(148, 163, 184, 0.08)' },
+                        ticks: { font: { size: 11 } }
+                    }
+                }
+            }
+        });
+    }
+
+    // Monthly Bar Chart
+    const monthlyElem = document.getElementById('monthly-chart');
+    if (monthlyElem) {
+        new Chart(monthlyElem, {
+            type: 'bar',
+            data: {
+                labels: monthly.labels,
+                datasets: [{
+                    label: 'Monthly Total (₹)',
+                    data: monthly.values,
+                    backgroundColor: '#3b82f6',
+                    borderRadius: 8,
+                    maxBarThickness: 45
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false }
+                },
+                scales: {
+                    x: {
+                        grid: { display: false },
+                        ticks: { font: { size: 11.5 } }
+                    },
+                    y: {
+                        grid: { color: 'rgba(148, 163, 184, 0.08)' },
+                        ticks: { font: { size: 11.5 } }
+                    }
+                }
+            }
+        });
+    }
+</script>
+{% endblock %}

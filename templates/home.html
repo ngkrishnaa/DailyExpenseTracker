@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="ExpenseFlow is a modern daily expense tracker designed to give you clarity, budgeting control, and smart analytics over every rupee.">
+    <title>Daily Expense Tracker | ExpenseFlow</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <nav class="navbar" aria-label="Main Navigation">
+        <a class="logo" href="{{ url_for('home') }}">
+            <span class="logo-icon">&#8377;</span>
+            <span>Expense<span class="logo-highlight">Flow</span></span>
+        </a>
+
+        <div class="nav-links">
+            <a href="{{ url_for('home') }}">Home</a>
+            <a href="#features">Features</a>
+            <a href="#about">About</a>
+        </div>
+
+        <div class="nav-buttons">
+            {% if session.get('user_id') %}
+                <a class="login-btn" href="{{ url_for('dashboard') }}">Dashboard</a>
+                <form class="inline-form" method="POST" action="{{ url_for('logout') }}">
+                    <button class="signup-btn" type="submit">Log out</button>
+                </form>
+            {% else %}
+                <a class="login-btn" href="{{ url_for('login') }}">Log in</a>
+                <a class="signup-btn" href="{{ url_for('register') }}">Create Account</a>
+            {% endif %}
+        </div>
+    </nav>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div class="home-flashes">
+                {% for category, message in messages %}
+                    <div class="flash-message {{ category }}">
+                        <i class="fa-solid fa-{{ 'circle-check' if category == 'success' else ('triangle-exclamation' if category == 'warning' else 'circle-exclamation') }}"></i>
+                        <span>{{ message }}</span>
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <main class="hero">
+        <div class="hero-content">
+            <div class="badge">
+                <i class="fa-solid fa-sparkles"></i>
+                <span>Smart Daily Money Management</span>
+            </div>
+
+            <h1>
+                Take control of
+                <span>every rupee.</span>
+            </h1>
+
+            <p class="hero-text">
+                Track your daily expenses, understand your spending habits, and make smarter financial decisions — all in one simple, private, and intuitive place.
+            </p>
+
+            <div class="hero-buttons">
+                <a class="primary-btn" href="{{ url_for('register') if not session.get('user_id') else url_for('dashboard') }}">
+                    <span>{{ 'Go to Dashboard' if session.get('user_id') else 'Get Started Free' }}</span>
+                    <i class="fa-solid fa-arrow-right"></i>
+                </a>
+                <a class="secondary-btn" href="#features">
+                    <span>Explore Features</span>
+                </a>
+            </div>
+
+            <div class="trust-section">
+                <div class="trust-item">
+                    <strong>100%</strong>
+                    <span>Private & Secure</span>
+                </div>
+                <div class="divider"></div>
+                <div class="trust-item">
+                    <strong>Daily</strong>
+                    <span>Live Tracking</span>
+                </div>
+                <div class="divider"></div>
+                <div class="trust-item">
+                    <strong>Smart</strong>
+                    <span>Visual Insights</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="dashboard-preview">
+            <div class="preview-header">
+                <div>
+                    <span class="small-label">TODAY'S SPENDING</span>
+                    <h2>&#8377;1,240</h2>
+                </div>
+                <div class="date-box">
+                    AUG
+                    <strong>15</strong>
+                </div>
+            </div>
+
+            <div class="progress-area">
+                <div class="progress-info">
+                    <span>Daily target</span>
+                    <strong>&#8377;1,240 / &#8377;2,000</strong>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress"></div>
+                </div>
+            </div>
+
+            <div class="expense-list">
+                <div class="expense-item">
+                    <div class="expense-icon food">
+                        <i class="fa-solid fa-utensils"></i>
+                    </div>
+                    <div class="expense-info">
+                        <strong>Food & Dining</strong>
+                        <span>Lunch with colleagues</span>
+                    </div>
+                    <strong class="expense-amount">&#8377;320</strong>
+                </div>
+
+                <div class="expense-item">
+                    <div class="expense-icon transport">
+                        <i class="fa-solid fa-bus"></i>
+                    </div>
+                    <div class="expense-info">
+                        <strong>Transportation</strong>
+                        <span>Bus & Metro commute</span>
+                    </div>
+                    <strong class="expense-amount">&#8377;180</strong>
+                </div>
+
+                <div class="expense-item">
+                    <div class="expense-icon shopping">
+                        <i class="fa-solid fa-bag-shopping"></i>
+                    </div>
+                    <div class="expense-info">
+                        <strong>Shopping</strong>
+                        <span>Office stationery & accessories</span>
+                    </div>
+                    <strong class="expense-amount">&#8377;740</strong>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <section class="features" id="features">
+        <div class="section-heading">
+            <span class="section-label">WHY EXPENSEFLOW?</span>
+            <h2>
+                Everything you need to
+                <span>understand your money.</span>
+            </h2>
+            <p>
+                Simple, powerful tools that help you track, analyze, and master your daily spending habits with clarity.
+            </p>
+        </div>
+
+        <div class="feature-grid">
+            <article class="feature-card">
+                <div class="feature-icon-wrap blue">
+                    <i class="fa-solid fa-chart-line"></i>
+                </div>
+                <h3>Daily Tracking</h3>
+                <p>
+                    Record transactions in seconds with organized categories, custom notes, and payment methods.
+                </p>
+            </article>
+
+            <article class="feature-card">
+                <div class="feature-icon-wrap emerald">
+                    <i class="fa-solid fa-wallet"></i>
+                </div>
+                <h3>Budget Limits</h3>
+                <p>
+                    Set monthly targets, receive real-time threshold warnings, and keep your finances safely on track.
+                </p>
+            </article>
+
+            <article class="feature-card">
+                <div class="feature-icon-wrap purple">
+                    <i class="fa-solid fa-chart-pie"></i>
+                </div>
+                <h3>Visual Reports</h3>
+                <p>
+                    Understand your spending breakdown and multi-month trends through clean, interactive charts.
+                </p>
+            </article>
+        </div>
+    </section>
+
+    <footer id="about">
+        <div class="footer-logo">
+            Expense<span>Flow</span>
+        </div>
+        <p>Your money. Your habits. Your control.</p>
+        <small>&copy; 2026 ExpenseFlow. Built for smarter spending.</small>
+    </footer>
+</body>
+</html>

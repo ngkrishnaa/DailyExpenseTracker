@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}ExpenseFlow{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {% block head %}{% endblock %}
+</head>
+<body class="app-body">
+    <!-- BACKDROP FOR SLIDE-OUT DRAWER -->
+    <div class="sidebar-backdrop" id="sidebar-backdrop" aria-hidden="true"></div>
+
+    <!-- MODERN OFF-CANVAS SLIDE-OUT DRAWER -->
+    <aside class="app-sidebar" id="app-sidebar" aria-label="Main navigation drawer" aria-hidden="true">
+        <!-- DRAWER HEADER WITH BRAND & CLOSE BUTTON -->
+        <div class="drawer-header">
+            <a class="app-brand" href="{{ url_for('dashboard') }}" title="ExpenseFlow Dashboard">
+                <span class="brand-mark">&#8377;</span>
+                <span>Expense<span>Flow</span></span>
+            </a>
+            <button class="drawer-close-btn" id="drawer-close" aria-label="Close navigation" title="Close Menu (Esc)">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <!-- DRAWER NAVIGATION MENU -->
+        <nav class="app-nav" aria-label="Main navigation">
+            <div class="nav-section-label">MAIN NAVIGATION</div>
+            <a class="{% if active_page == 'dashboard' %}active{% endif %}" href="{{ url_for('dashboard') }}">
+                <span class="nav-icon-wrap"><i class="fa-solid fa-house"></i></span>
+                <span class="nav-label">Dashboard</span>
+            </a>
+            <a class="{% if active_page == 'add_expense' %}active{% endif %}" href="{{ url_for('add_expense') }}">
+                <span class="nav-icon-wrap"><i class="fa-solid fa-circle-plus"></i></span>
+                <span class="nav-label">Add Expense</span>
+            </a>
+            <a class="{% if active_page == 'expenses' %}active{% endif %}" href="{{ url_for('expenses') }}">
+                <span class="nav-icon-wrap"><i class="fa-solid fa-receipt"></i></span>
+                <span class="nav-label">My Expenses</span>
+            </a>
+            <a class="{% if active_page == 'budget' %}active{% endif %}" href="{{ url_for('budget') }}">
+                <span class="nav-icon-wrap"><i class="fa-solid fa-wallet"></i></span>
+                <span class="nav-label">Budget</span>
+            </a>
+            <a class="{% if active_page == 'reports' %}active{% endif %}" href="{{ url_for('reports') }}">
+                <span class="nav-icon-wrap"><i class="fa-solid fa-chart-column"></i></span>
+                <span class="nav-label">Reports</span>
+            </a>
+            <a class="{% if active_page == 'profile' %}active{% endif %}" href="{{ url_for('profile') }}">
+                <span class="nav-icon-wrap"><i class="fa-solid fa-user"></i></span>
+                <span class="nav-label">Profile</span>
+            </a>
+        </nav>
+
+        <!-- DRAWER FOOTER WITH USER DETAILS & LOGOUT -->
+        <div class="sidebar-footer">
+            <a class="sidebar-user-card" href="{{ url_for('profile') }}" title="Manage Account Settings">
+                <div class="user-avatar"><i class="fa-solid fa-user"></i></div>
+                <div class="user-details">
+                    <span class="sidebar-user-name">{{ session.get('user_name') }}</span>
+                    <span class="sidebar-user-role">Personal Account</span>
+                </div>
+                <i class="fa-solid fa-chevron-right user-card-arrow"></i>
+            </a>
+            <form method="POST" action="{{ url_for('logout') }}" class="logout-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="sidebar-logout" type="submit" title="Log out of your account">
+                    <i class="fa-solid fa-arrow-right-from-bracket"></i>
+                    <span>Log out</span>
+                </button>
+            </form>
+        </div>
+    </aside>
+
+    <!-- FULL-WIDTH APPLICATION TOPBAR -->
+    <header class="app-topbar" id="app-topbar">
+        <div class="topbar-left">
+            <button class="nav-drawer-toggle" id="drawer-toggle" aria-label="Open navigation menu" aria-controls="app-sidebar" aria-expanded="false" title="Open Menu">
+                <i class="fa-solid fa-bars"></i>
+                <span class="toggle-text">Menu</span>
+            </button>
+            <a class="app-brand" href="{{ url_for('dashboard') }}" title="ExpenseFlow Dashboard">
+                <span class="brand-mark">&#8377;</span>
+                <span>Expense<span>Flow</span></span>
+            </a>
+        </div>
+
+        <div class="topbar-right">
+            <a class="button button-primary topbar-btn" href="{{ url_for('add_expense') }}">
+                <i class="fa-solid fa-plus"></i>
+                <span class="topbar-btn-text">Add Expense</span>
+            </a>
+
+            <!-- NOTIFICATIONS BELL & DROPDOWN -->
+            <div class="notifications-wrapper" id="notifications-wrapper">
+                <button class="topbar-icon-btn" id="notification-bell-btn" aria-label="Notifications" aria-expanded="false" title="Notifications">
+                    <i class="fa-solid fa-bell"></i>
+                    {% if unread_notification_count and unread_notification_count > 0 %}
+                        <span class="notification-badge" id="notification-badge">{{ unread_notification_count }}</span>
+                    {% endif %}
+                </button>
+
+                <div class="notifications-dropdown" id="notifications-dropdown" aria-hidden="true">
+                    <div class="notifications-dropdown-header">
+                        <div class="dropdown-title-wrap">
+                            <i class="fa-solid fa-bell"></i>
+                            <h3>Notifications</h3>
+                            {% if unread_notification_count and unread_notification_count > 0 %}
+                                <span class="unread-pill">{{ unread_notification_count }} new</span>
+                            {% endif %}
+                        </div>
+                        {% if user_notifications and user_notifications|length > 0 %}
+                            <form method="POST" action="{{ url_for('mark_all_notifications_read') }}" class="mark-all-form">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="mark-all-read-btn" title="Mark all as read">
+                                    <i class="fa-solid fa-check-double"></i> Mark all read
+                                </button>
+                            </form>
+                        {% endif %}
+                    </div>
+
+                    <div class="notifications-list" id="notifications-list">
+                        {% if user_notifications and user_notifications|length > 0 %}
+                            {% for notif in user_notifications %}
+                                <div class="notification-item {{ notif.type }} {{ 'unread' if not notif.is_read else 'read' }}" id="notif-{{ notif.id }}">
+                                    <div class="notif-icon-box {{ notif.type }}">
+                                        {% if notif.type == 'budget_exceeded' %}
+                                            <i class="fa-solid fa-triangle-exclamation"></i>
+                                        {% elif notif.type in ['budget_90', 'budget_80', 'budget_warning'] %}
+                                            <i class="fa-solid fa-circle-exclamation"></i>
+                                        {% elif notif.type == 'spending_spike' %}
+                                            <i class="fa-solid fa-arrow-trend-up"></i>
+                                        {% elif notif.type == 'large_expense' %}
+                                            <i class="fa-solid fa-receipt"></i>
+                                        {% else %}
+                                            <i class="fa-solid fa-bell"></i>
+                                        {% endif %}
+                                    </div>
+                                    <div class="notif-content">
+                                        <div class="notif-title-row">
+                                            <h4 class="notif-title">{{ notif.title }}</h4>
+                                            {% if not notif.is_read %}
+                                                <span class="unread-dot" title="Unread"></span>
+                                            {% endif %}
+                                        </div>
+                                        <p class="notif-message">{{ notif.message }}</p>
+                                        <div class="notif-footer-meta">
+                                            <span class="notif-time"><i class="fa-regular fa-clock"></i> {{ notif.created_at.strftime('%d %b, %H:%M') if notif.created_at else 'Recent' }}</span>
+                                            <div class="notif-actions">
+                                                {% if not notif.is_read %}
+                                                    <form method="POST" action="{{ url_for('mark_notification_read', notification_id=notif.id) }}" class="inline-notif-form">
+                                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                                        <button type="submit" class="notif-action-link" title="Mark as read">Mark read</button>
+                                                    </form>
+                                                {% endif %}
+                                                <form method="POST" action="{{ url_for('dismiss_notification', notification_id=notif.id) }}" class="inline-notif-form">
+                                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                                    <button type="submit" class="notif-dismiss-btn" title="Dismiss">&times;</button>
+                                                </form>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            {% endfor %}
+                        {% else %}
+                            <div class="notifications-empty">
+                                <div class="empty-bell-icon"><i class="fa-solid fa-bell-slash"></i></div>
+                                <p class="empty-title">All caught up!</p>
+                                <p class="empty-subtitle">No unread notifications right now.</p>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <a class="topbar-user-pill" href="{{ url_for('profile') }}" title="Account Settings">
+                <div class="user-avatar-sm"><i class="fa-solid fa-user"></i></div>
+                <span class="user-name-short">{{ session.get('user_name') }}</span>
+            </a>
+        </div>
+    </header>
+
+    <!-- FULL-SCREEN MAIN CONTENT -->
+    <main class="app-main">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="app-flashes">
+                    {% for category, message in messages %}
+                        <div class="flash-message {{ category }}">
+                            <i class="fa-solid fa-{{ 'circle-check' if category == 'success' else ('triangle-exclamation' if category == 'warning' else 'circle-exclamation') }}"></i>
+                            <span>{{ message }}</span>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- DRAWER & NOTIFICATIONS CONTROLLER JAVASCRIPT -->
+    <script>
+        (function() {
+            const body = document.body;
+            const sidebar = document.getElementById('app-sidebar');
+            const toggleBtn = document.getElementById('drawer-toggle');
+            const closeBtn = document.getElementById('drawer-close');
+            const backdrop = document.getElementById('sidebar-backdrop');
+            const notifBtn = document.getElementById('notification-bell-btn');
+            const notifDropdown = document.getElementById('notifications-dropdown');
+            const notifWrapper = document.getElementById('notifications-wrapper');
+
+            function openDrawer() {
+                body.classList.add('drawer-open');
+                sidebar.setAttribute('aria-hidden', 'false');
+                if (toggleBtn) toggleBtn.setAttribute('aria-expanded', 'true');
+                closeNotifications();
+            }
+
+            function closeDrawer() {
+                body.classList.remove('drawer-open');
+                sidebar.setAttribute('aria-hidden', 'true');
+                if (toggleBtn) toggleBtn.setAttribute('aria-expanded', 'false');
+            }
+
+            function toggleDrawer() {
+                if (body.classList.contains('drawer-open')) {
+                    closeDrawer();
+                } else {
+                    openDrawer();
+                }
+            }
+
+            function toggleNotifications() {
+                if (!notifDropdown) return;
+                const isOpen = notifDropdown.classList.contains('active');
+                if (isOpen) {
+                    closeNotifications();
+                } else {
+                    notifDropdown.classList.add('active');
+                    notifDropdown.setAttribute('aria-hidden', 'false');
+                    if (notifBtn) notifBtn.setAttribute('aria-expanded', 'true');
+                    closeDrawer();
+                }
+            }
+
+            function closeNotifications() {
+                if (!notifDropdown) return;
+                notifDropdown.classList.remove('active');
+                notifDropdown.setAttribute('aria-hidden', 'true');
+                if (notifBtn) notifBtn.setAttribute('aria-expanded', 'false');
+            }
+
+            if (toggleBtn) {
+                toggleBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    toggleDrawer();
+                });
+            }
+
+            if (closeBtn) {
+                closeBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    closeDrawer();
+                });
+            }
+
+            if (backdrop) {
+                backdrop.addEventListener('click', closeDrawer);
+            }
+
+            if (notifBtn) {
+                notifBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    toggleNotifications();
+                });
+            }
+
+            // Close when pressing Escape key
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape') {
+                    if (body.classList.contains('drawer-open')) closeDrawer();
+                    closeNotifications();
+                }
+            });
+
+            // Close when clicking outside
+            document.addEventListener('click', function(e) {
+                if (body.classList.contains('drawer-open')) {
+                    if (!sidebar.contains(e.target) && (!toggleBtn || !toggleBtn.contains(e.target))) {
+                        closeDrawer();
+                    }
+                }
+                if (notifDropdown && notifDropdown.classList.contains('active')) {
+                    if (notifWrapper && !notifWrapper.contains(e.target)) {
+                        closeNotifications();
+                    }
+                }
+            });
+
+            // Close drawer upon clicking any navigation link inside it
+            document.querySelectorAll('#app-sidebar a').forEach(function(link) {
+                link.addEventListener('click', function() {
+                    closeDrawer();
+                });
+            });
+        })();
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verify Email | ExpenseFlow</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="register-body">
+    <div class="register-container">
+        <!-- LEFT SHOWCASE -->
+        <section class="register-showcase">
+            <a href="{{ url_for('home') }}" class="register-brand">
+                <span class="brand-icon">&#8377;</span>
+                <span>Expense<span>Flow</span></span>
+            </a>
+            <div class="showcase-content">
+                <div class="showcase-badge">
+                    <i class="fa-solid fa-envelope-circle-check"></i>
+                    <span>Secure Email Verification</span>
+                </div>
+                <h1>One more step to <span>secure your account.</span></h1>
+                <p>We've sent a 6-digit verification code to <strong>{{ email }}</strong>. Enter it below to complete your registration and unlock your dashboard.</p>
+                <div class="benefit-list">
+                    <div class="benefit">
+                        <div class="benefit-icon"><i class="fa-solid fa-check"></i></div>
+                        <div>
+                            <strong>Instant activation</strong>
+                            <span>Your account is activated immediately upon successful verification.</span>
+                        </div>
+                    </div>
+                    <div class="benefit">
+                        <div class="benefit-icon"><i class="fa-solid fa-check"></i></div>
+                        <div>
+                            <strong>Time-limited security</strong>
+                            <span>Verification codes expire automatically after 10 minutes.</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="showcase-footer">Your money. Your habits. Your control.</div>
+        </section>
+
+        <!-- RIGHT FORM -->
+        <section class="register-form-section">
+            <div class="register-form-wrapper">
+                <div class="mobile-brand">
+                    <span class="brand-icon">&#8377;</span>
+                    <span>Expense<span>Flow</span></span>
+                </div>
+                <div class="form-heading">
+                    <span class="form-step">STEP 2 OF 2</span>
+                    <h2>Verify your email</h2>
+                    <p>Enter the 6-digit code sent to your inbox.</p>
+                </div>
+
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                            <div class="flash-message {{ category }}">
+                                <i class="fa-solid fa-{{ 'circle-check' if category == 'success' else ('triangle-exclamation' if category == 'warning' else 'circle-exclamation') }}"></i>
+                                <span>{{ message }}</span>
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+
+                <form class="register-form" method="POST" action="{{ url_for('verify_otp', email=email) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div class="input-group">
+                        <label for="otp">Verification Code</label>
+                        <div class="input-wrapper">
+                            <i class="fa-solid fa-key input-icon"></i>
+                            <input
+                                type="text"
+                                id="otp"
+                                name="otp"
+                                placeholder="Enter 6-digit code"
+                                maxlength="6"
+                                minlength="6"
+                                pattern="[0-9]{6}"
+                                inputmode="numeric"
+                                autocomplete="one-time-code"
+                                autofocus
+                                required
+                            >
+                        </div>
+                        <small>Check your email inbox or spam folder. The code expires in 10 minutes.</small>
+                    </div>
+
+                    <button type="submit" class="register-submit">
+                        <span>Verify & Create Account</span>
+                        <span class="submit-arrow"><i class="fa-solid fa-arrow-right"></i></span>
+                    </button>
+                </form>
+
+                <div class="login-prompt">
+                    Didn't receive the code?
+                    <a href="{{ url_for('resend_otp', email=email) }}">Resend OTP</a>
+                </div>
+
+                <div class="security-note">
+                    <i class="fa-solid fa-shield-halved"></i>
+                    <span>Your account will only be created and initialized after your email address is verified.</span>
+                </div>
+            </div>
+        </section>
+    </div>
+</body>
+</html>

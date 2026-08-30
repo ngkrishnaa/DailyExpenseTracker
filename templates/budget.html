@@ -1,0 +1,129 @@
+{% extends "dashboard_base.html" %}
+{% block title %}Budget Management | ExpenseFlow{% endblock %}
+
+{% block content %}
+<!-- PAGE HEADER -->
+<header class="page-header">
+    <div>
+        <div class="header-badge">
+            <i class="fa-solid fa-wallet"></i>
+            <span>BUDGET MANAGEMENT</span>
+        </div>
+        <h1>{{ month_label }} Budget</h1>
+        <p class="header-subtitle">Set monthly spending limits and monitor your savings progress in real time.</p>
+    </div>
+    <div class="header-actions">
+        <a class="button button-secondary" href="{{ url_for('dashboard') }}">
+            <i class="fa-solid fa-gauge-high"></i>
+            <span>View Dashboard</span>
+        </a>
+    </div>
+</header>
+
+<!-- BUDGET LAYOUT -->
+<section class="budget-layout">
+    <!-- Hero Progress Panel -->
+    <article class="panel budget-hero {{ status }}">
+        <div class="panel-heading">
+            <div class="panel-title-wrap">
+                <div class="panel-icon-wrap emerald"><i class="fa-solid fa-bullseye"></i></div>
+                <div>
+                    <span class="eyebrow">LIVE SPENDING PULSE</span>
+                    <h2>Monthly Progress</h2>
+                </div>
+            </div>
+            {% if budget %}
+                {% if status == 'over' %}
+                    <span class="status-pill over"><i class="fa-solid fa-triangle-exclamation"></i> Over budget</span>
+                {% elif status == 'warning' %}
+                    <span class="status-pill warning"><i class="fa-solid fa-circle-exclamation"></i> {{ percentage|round(0)|int }}% used</span>
+                {% else %}
+                    <span class="status-pill normal"><i class="fa-solid fa-circle-check"></i> On track ({{ percentage|round(0)|int }}%)</span>
+                {% endif %}
+            {% endif %}
+        </div>
+
+        <div class="budget-hero-values">
+            <div>
+                <span>Spent so far</span>
+                <strong>{{ spent|inr }}</strong>
+            </div>
+            <div>
+                <span>{% if budget %}Remaining Balance{% else %}Monthly Budget{% endif %}</span>
+                <strong>{{ remaining|inr if budget else 'Not set' }}</strong>
+            </div>
+        </div>
+
+        {% if budget %}
+            <div class="progress-track large">
+                <span class="progress-fill {{ status }}" style="width: {{ percentage }}%"></span>
+            </div>
+            <p class="budget-status">
+                {% if status == 'over' %}
+                    <i class="fa-solid fa-circle-exclamation" style="color: #fb7185; margin-right: 6px;"></i>
+                    You have exceeded your monthly budget by <strong>{{ (spent - budget)|inr }}</strong>.
+                {% elif status == 'warning' %}
+                    <i class="fa-solid fa-triangle-exclamation" style="color: #fbbf24; margin-right: 6px;"></i>
+                    You have used <strong>{{ percentage|round(0)|int }}%</strong> of your budget. Keep an eye on upcoming expenses.
+                {% else %}
+                    <i class="fa-solid fa-circle-check" style="color: #34d399; margin-right: 6px;"></i>
+                    You are safely within your limit with <strong>{{ remaining|inr }}</strong> remaining.
+                {% endif %}
+            </p>
+        {% else %}
+            <div class="progress-track large">
+                <span class="progress-fill" style="width: 0%"></span>
+            </div>
+            <p class="budget-status">
+                <i class="fa-solid fa-info-circle" style="color: #60a5fa; margin-right: 6px;"></i>
+                Set a monthly budget on the right to track your progress and trigger threshold alerts.
+            </p>
+        {% endif %}
+    </article>
+
+    <!-- Budget Setting Form Panel -->
+    <article class="panel form-panel budget-form">
+        <div class="form-card-header">
+            <div class="form-icon-wrap emerald">
+                <i class="fa-solid fa-sliders"></i>
+            </div>
+            <div>
+                <span class="eyebrow">{{ 'UPDATE' if budget else 'SET' }} LIMIT</span>
+                <h2>{{ 'Adjust your limit' if budget else 'Set monthly budget' }}</h2>
+            </div>
+        </div>
+
+        <form class="app-form" method="POST" action="{{ url_for('budget') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="form-field-group">
+                <label for="budget_amount">
+                    <span>Monthly Target (&#8377;)</span>
+                    <span class="required-indicator">*</span>
+                </label>
+                <div class="input-icon-wrap currency-field">
+                    <span class="input-symbol">&#8377;</span>
+                    <input
+                        type="number"
+                        id="budget_amount"
+                        name="budget_amount"
+                        min="0.01"
+                        step="0.01"
+                        value="{{ budget if budget else '' }}"
+                        placeholder="e.g. 25000.00"
+                        autocomplete="off"
+                        required
+                    >
+                </div>
+                <small class="field-hint">Target budget applies to all expenses in {{ month_label }}.</small>
+            </div>
+
+            <div class="form-actions">
+                <button class="button button-primary" type="submit" style="width: 100%;">
+                    <i class="fa-solid fa-floppy-disk"></i>
+                    <span>Save Monthly Budget</span>
+                </button>
+            </div>
+        </form>
+    </article>
+</section>
+{% endblock %}

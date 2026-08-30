@@ -1,0 +1,183 @@
+{% extends "dashboard_base.html" %}
+{% block title %}Account Settings | ExpenseFlow{% endblock %}
+
+{% block content %}
+<!-- PAGE HEADER -->
+<header class="page-header">
+    <div>
+        <div class="header-badge">
+            <i class="fa-solid fa-user-gear"></i>
+            <span>ACCOUNT SETTINGS</span>
+        </div>
+        <h1>Your Profile</h1>
+        <p class="header-subtitle">Manage your personal profile details and maintain strong account security.</p>
+    </div>
+    <div class="header-actions">
+        <a class="button button-secondary" href="{{ url_for('dashboard') }}">
+            <i class="fa-solid fa-gauge-high"></i>
+            <span>View Dashboard</span>
+        </a>
+    </div>
+</header>
+
+<!-- PROFILE DUAL-PANEL GRID -->
+<section class="profile-grid">
+    <!-- Panel 1: Personal Details -->
+    <article class="panel form-panel">
+        <div class="form-card-header">
+            <div class="form-icon-wrap blue">
+                <i class="fa-regular fa-id-card"></i>
+            </div>
+            <div>
+                <span class="eyebrow">PERSONAL DETAILS</span>
+                <h2>Profile Information</h2>
+            </div>
+        </div>
+
+        <form class="app-form" method="POST" action="{{ url_for('profile') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="action" value="name">
+
+            <div class="form-field-group">
+                <label for="name">
+                    <span>Full Name</span>
+                    <span class="required-indicator">*</span>
+                </label>
+                <div class="input-icon-wrap">
+                    <i class="fa-regular fa-user input-icon"></i>
+                    <input
+                        type="text"
+                        id="name"
+                        name="name"
+                        value="{{ user.name }}"
+                        minlength="2"
+                        maxlength="120"
+                        autocomplete="name"
+                        required
+                    >
+                </div>
+                <small class="field-hint">Your name as displayed on your dashboard and reports.</small>
+            </div>
+
+            <div class="form-field-group">
+                <label for="email">
+                    <span>Email Address</span>
+                    <span class="optional-badge">Verified</span>
+                </label>
+                <div class="input-icon-wrap">
+                    <i class="fa-regular fa-envelope input-icon"></i>
+                    <input
+                        type="email"
+                        id="email"
+                        value="{{ user.email }}"
+                        disabled
+                    >
+                </div>
+                <small class="field-hint">Primary email address used for account authentication.</small>
+            </div>
+
+            <div class="form-actions">
+                <button class="button button-primary" type="submit">
+                    <i class="fa-solid fa-floppy-disk"></i>
+                    <span>Save Profile Changes</span>
+                </button>
+            </div>
+        </form>
+    </article>
+
+    <!-- Panel 2: Security & Password -->
+    <article class="panel form-panel">
+        <div class="form-card-header">
+            <div class="form-icon-wrap purple">
+                <i class="fa-solid fa-shield-halved"></i>
+            </div>
+            <div>
+                <span class="eyebrow">SECURITY CREDENTIALS</span>
+                <h2>Change Password</h2>
+            </div>
+        </div>
+
+        <form class="app-form" method="POST" action="{{ url_for('profile') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="action" value="password">
+
+            <div class="form-field-group">
+                <label for="current_password">
+                    <span>Current Password</span>
+                    <span class="required-indicator">*</span>
+                </label>
+                <div class="input-icon-wrap">
+                    <i class="fa-solid fa-key input-icon"></i>
+                    <input
+                        type="password"
+                        id="current_password"
+                        name="current_password"
+                        placeholder="Enter current password"
+                        autocomplete="current-password"
+                        required
+                    >
+                    <button type="button" class="password-toggle" onclick="togglePassword('current_password', this)">Show</button>
+                </div>
+            </div>
+
+            <div class="form-field-group">
+                <label for="new_password">
+                    <span>New Password</span>
+                    <span class="required-indicator">*</span>
+                </label>
+                <div class="input-icon-wrap">
+                    <i class="fa-solid fa-lock input-icon"></i>
+                    <input
+                        type="password"
+                        id="new_password"
+                        name="new_password"
+                        minlength="8"
+                        placeholder="At least 8 characters"
+                        autocomplete="new-password"
+                        required
+                    >
+                    <button type="button" class="password-toggle" onclick="togglePassword('new_password', this)">Show</button>
+                </div>
+                <small class="field-hint">Must contain at least 8 characters, one letter, and one number.</small>
+            </div>
+
+            <div class="form-field-group">
+                <label for="confirm_password">
+                    <span>Confirm New Password</span>
+                    <span class="required-indicator">*</span>
+                </label>
+                <div class="input-icon-wrap">
+                    <i class="fa-solid fa-lock input-icon"></i>
+                    <input
+                        type="password"
+                        id="confirm_password"
+                        name="confirm_password"
+                        placeholder="Confirm new password"
+                        autocomplete="new-password"
+                        required
+                    >
+                    <button type="button" class="password-toggle" onclick="togglePassword('confirm_password', this)">Show</button>
+                </div>
+            </div>
+
+            <div class="form-actions">
+                <button class="button button-secondary" type="submit">
+                    <i class="fa-solid fa-lock"></i>
+                    <span>Update Password</span>
+                </button>
+            </div>
+        </form>
+    </article>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function togglePassword(inputId, button) {
+        const input = document.getElementById(inputId);
+        const isPassword = input.type === "password";
+        input.type = isPassword ? "text" : "password";
+        button.textContent = isPassword ? "Hide" : "Show";
+    }
+</script>
+{% endblock %}

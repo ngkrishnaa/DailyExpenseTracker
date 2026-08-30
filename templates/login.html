@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Log In | ExpenseFlow</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="register-body">
+    <div class="register-container">
+        <section class="register-showcase">
+            <a href="{{ url_for('home') }}" class="register-brand">
+                <span class="brand-icon">&#8377;</span>
+                <span>Expense<span>Flow</span></span>
+            </a>
+            <div class="showcase-content">
+                <div class="showcase-badge">
+                    <i class="fa-solid fa-shield-halved"></i>
+                    <span>Secure account access</span>
+                </div>
+                <h1>Welcome back to <span>your money flow.</span></h1>
+                <p>Log in to continue tracking your daily expenses, managing your budgets, and building healthier financial habits.</p>
+                <div class="benefit-list">
+                    <div class="benefit">
+                        <div class="benefit-icon"><i class="fa-solid fa-check"></i></div>
+                        <div>
+                            <strong>Private by design</strong>
+                            <span>Your account and financial data are completely secure.</span>
+                        </div>
+                    </div>
+                    <div class="benefit">
+                        <div class="benefit-icon"><i class="fa-solid fa-check"></i></div>
+                        <div>
+                            <strong>Always accessible</strong>
+                            <span>Seamlessly resume tracking from any device or screen.</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="showcase-footer">Your money. Your habits. Your control.</div>
+        </section>
+
+        <section class="register-form-section">
+            <div class="register-form-wrapper">
+                <div class="mobile-brand">
+                    <span class="brand-icon">&#8377;</span>
+                    <span>Expense<span>Flow</span></span>
+                </div>
+                <div class="form-heading">
+                    <span class="form-step">WELCOME BACK</span>
+                    <h2>Log in to your account</h2>
+                    <p>Enter your credentials to access your dashboard.</p>
+                </div>
+
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                            <div class="flash-message {{ category }}">
+                                <i class="fa-solid fa-{{ 'circle-check' if category == 'success' else ('triangle-exclamation' if category == 'warning' else 'circle-exclamation') }}"></i>
+                                <span>{{ message }}</span>
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+
+                <form class="register-form" method="POST" action="{{ url_for('login') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div class="input-group">
+                        <label for="email">Email Address</label>
+                        <div class="input-wrapper">
+                            <i class="fa-regular fa-envelope input-icon"></i>
+                            <input type="email" id="email" name="email" value="{{ email|default('') }}" placeholder="you@example.com" autocomplete="email" required>
+                        </div>
+                    </div>
+                    <div class="input-group">
+                        <label for="password">Password</label>
+                        <div class="input-wrapper">
+                            <i class="fa-solid fa-lock input-icon"></i>
+                            <input type="password" id="password" name="password" placeholder="Enter your password" autocomplete="current-password" required>
+                            <button type="button" class="password-toggle" onclick="togglePassword()">Show</button>
+                        </div>
+                    </div>
+                    <div class="form-helper-link">
+                        <a href="{{ url_for('forgot_password') }}">Forgot password?</a>
+                    </div>
+                    <button type="submit" class="register-submit">
+                        <span>Log In</span>
+                        <span class="submit-arrow"><i class="fa-solid fa-arrow-right"></i></span>
+                    </button>
+                </form>
+                <div class="login-prompt">
+                    New to ExpenseFlow? <a href="{{ url_for('register') }}">Create an account</a>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <script>
+        function togglePassword() {
+            const input = document.getElementById("password");
+            const button = document.querySelector(".password-toggle");
+            const isPassword = input.type === "password";
+            input.type = isPassword ? "text" : "password";
+            button.textContent = isPassword ? "Hide" : "Show";
+        }
+    </script>
+</body>
+</html>

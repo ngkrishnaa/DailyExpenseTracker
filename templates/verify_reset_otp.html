@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verify Reset Code | ExpenseFlow</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="register-body">
+    <div class="register-container">
+        <!-- LEFT SHOWCASE -->
+        <section class="register-showcase">
+            <a href="{{ url_for('home') }}" class="register-brand">
+                <span class="brand-icon">&#8377;</span>
+                <span>Expense<span>Flow</span></span>
+            </a>
+            <div class="showcase-content">
+                <div class="showcase-badge">
+                    <i class="fa-solid fa-shield-halved"></i>
+                    <span>Secure Verification</span>
+                </div>
+                <h1>Verify your <span>reset request.</span></h1>
+                <p>Enter the 6-digit verification code sent to your email. For your safety, the code expires in 10 minutes and allows a limited number of attempts.</p>
+                <div class="benefit-list">
+                    <div class="benefit">
+                        <div class="benefit-icon"><i class="fa-solid fa-check"></i></div>
+                        <div>
+                            <strong>Temporary code</strong>
+                            <span>Expires after 10 minutes for your protection.</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="showcase-footer">Your money. Your habits. Your control.</div>
+        </section>
+
+        <!-- RIGHT FORM -->
+        <section class="register-form-section">
+            <div class="register-form-wrapper">
+                <div class="mobile-brand">
+                    <span class="brand-icon">&#8377;</span>
+                    <span>Expense<span>Flow</span></span>
+                </div>
+
+                <div class="form-heading">
+                    <span class="form-step">STEP 1 OF 2</span>
+                    <h2>Verify your code</h2>
+                    <p>Enter the 6-digit code from your email message.</p>
+                </div>
+
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                            <div class="flash-message {{ category }}">
+                                <i class="fa-solid fa-{{ 'circle-check' if category == 'success' else ('triangle-exclamation' if category == 'warning' else 'circle-exclamation') }}"></i>
+                                <span>{{ message }}</span>
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+
+                <form class="register-form" method="POST" action="{{ url_for('verify_reset_otp') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div class="input-group">
+                        <label for="otp">Verification Code</label>
+                        <div class="input-wrapper">
+                            <i class="fa-solid fa-key input-icon"></i>
+                            <input
+                                type="text"
+                                id="otp"
+                                name="otp"
+                                placeholder="Enter 6-digit code"
+                                maxlength="6"
+                                minlength="6"
+                                pattern="[0-9]{6}"
+                                inputmode="numeric"
+                                autocomplete="one-time-code"
+                                autofocus
+                                required
+                            >
+                        </div>
+                        <small>This code expires in 10 minutes and has a maximum of 5 attempts.</small>
+                    </div>
+
+                    <button type="submit" class="register-submit">
+                        <span>Verify Code</span>
+                        <span class="submit-arrow"><i class="fa-solid fa-arrow-right"></i></span>
+                    </button>
+                </form>
+
+                <div class="login-prompt">
+                    <a href="{{ url_for('forgot_password') }}">Use a different email</a> &middot; <a href="{{ url_for('login') }}">Return to Log In</a>
+                </div>
+            </div>
+        </section>
+    </div>
+</body>
+</html>
