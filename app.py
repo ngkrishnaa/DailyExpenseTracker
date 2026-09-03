@@ -13,14 +13,21 @@ import os
 import random
 import secrets
 import smtplib
+import resend
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 
 # Load values from .env
 load_dotenv()
 
+RESEND_API_KEY = os.getenv("RESEND_API_KEY")
+RESEND_FROM_EMAIL = os.getenv("RESEND_FROM_EMAIL", "ExpenseFlow <onboarding@resend.dev>")
+if RESEND_API_KEY:
+    resend.api_key = RESEND_API_KEY
+
 MAIL_EMAIL = os.getenv("MAIL_EMAIL")
-MAIL_PASSWORD = os.getenv("MAIL_PASSWORD")
+# Sanitize spaces if present in Gmail App Password for SMTP fallback
+MAIL_PASSWORD = os.getenv("MAIL_PASSWORD", "").replace(" ", "").strip() if os.getenv("MAIL_PASSWORD") else None
 
 app = Flask(__name__)
 app.config.update(
@@ -62,14 +69,8 @@ EXPENSES_PER_PAGE = 10
 # -----------------------------------
 
 def send_otp_email(receiver_email, otp):
-    if not MAIL_EMAIL or not MAIL_PASSWORD:
-        app.logger.error("SMTP Config Error: MAIL_EMAIL or MAIL_PASSWORD is not configured in environment variables.")
-        raise smtplib.SMTPException("MAIL_EMAIL or MAIL_PASSWORD is not configured.")
-
     subject = "Your ExpenseFlow Verification Code"
-
-    message = f"""
-Hello,
+    plain_text = f"""Hello,
 
 Your ExpenseFlow verification code is:
 
@@ -82,9 +83,49 @@ If you did not request this code, you can safely ignore this email.
 Regards,
 ExpenseFlow Team
 """
+    html_content = f"""
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 24px; background: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0;">
+        <div style="text-align: center; margin-bottom: 24px;">
+            <h2 style="color: #0f172a; margin: 0; font-size: 22px; font-weight: 700;">ExpenseFlow</h2>
+            <p style="color: #64748b; font-size: 14px; margin-top: 4px;">Smart Personal Expense Tracking</p>
+        </div>
+        <div style="background: #f8fafc; border-radius: 8px; padding: 20px; text-align: center; margin-bottom: 24px; border: 1px dashed #cbd5e1;">
+            <span style="font-size: 13px; color: #475569; text-transform: uppercase; letter-spacing: 1px; font-weight: 600;">Verification Code</span>
+            <div style="font-size: 36px; font-weight: 800; letter-spacing: 6px; color: #2563eb; margin: 12px 0;">{otp}</div>
+            <p style="color: #64748b; font-size: 13px; margin: 0;">Valid for 10 minutes</p>
+        </div>
+        <p style="color: #334155; font-size: 14px; line-height: 1.5; margin: 0 0 16px 0;">
+            Enter this 6-digit code on the registration screen to verify your email address and activate your account.
+        </p>
+        <p style="color: #94a3b8; font-size: 12px; line-height: 1.4; margin: 0; border-top: 1px solid #f1f5f9; padding-top: 16px;">
+            If you did not attempt to register on ExpenseFlow, you can safely ignore this email.
+        </p>
+    </div>
+    """
 
-    email_message = f"Subject: {subject}\n\n{message}"
+    if RESEND_API_KEY:
+        try:
+            resend.api_key = RESEND_API_KEY
+            params = {
+                "from": RESEND_FROM_EMAIL,
+                "to": [receiver_email],
+                "subject": subject,
+                "text": plain_text,
+                "html": html_content,
+            }
+            resend.Emails.send(params)
+            app.logger.info("OTP verification email sent via Resend HTTPS API.")
+            return
+        except Exception as exc:
+            app.logger.error("Resend API delivery error in send_otp_email: %s: %s", type(exc).__name__, exc)
+            raise
 
+    # Fallback to Gmail SMTP if RESEND_API_KEY is not configured
+    if not MAIL_EMAIL or not MAIL_PASSWORD:
+        app.logger.error("Email Config Error: Neither RESEND_API_KEY nor MAIL_EMAIL/MAIL_PASSWORD is configured.")
+        raise smtplib.SMTPException("Email delivery service is not configured.")
+
+    email_message = f"Subject: {subject}\n\n{plain_text}"
     try:
         with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as server:
             server.starttls()
@@ -103,13 +144,8 @@ ExpenseFlow Team
 
 
 def send_password_reset_otp_email(receiver_email, otp):
-    if not MAIL_EMAIL or not MAIL_PASSWORD:
-        app.logger.error("SMTP Config Error: MAIL_EMAIL or MAIL_PASSWORD is not configured in environment variables.")
-        raise smtplib.SMTPException("MAIL_EMAIL or MAIL_PASSWORD is not configured.")
-
     subject = "Your ExpenseFlow Password Reset Code"
-    message = f"""
-Hello,
+    plain_text = f"""Hello,
 
 Your ExpenseFlow password reset code is:
 
@@ -121,8 +157,49 @@ If you did not request a password reset, you can safely ignore this email.
 Regards,
 ExpenseFlow Team
 """
-    email_message = f"Subject: {subject}\n\n{message}"
+    html_content = f"""
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 24px; background: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0;">
+        <div style="text-align: center; margin-bottom: 24px;">
+            <h2 style="color: #0f172a; margin: 0; font-size: 22px; font-weight: 700;">ExpenseFlow</h2>
+            <p style="color: #64748b; font-size: 14px; margin-top: 4px;">Password Reset Request</p>
+        </div>
+        <div style="background: #f8fafc; border-radius: 8px; padding: 20px; text-align: center; margin-bottom: 24px; border: 1px dashed #cbd5e1;">
+            <span style="font-size: 13px; color: #475569; text-transform: uppercase; letter-spacing: 1px; font-weight: 600;">Reset Code</span>
+            <div style="font-size: 36px; font-weight: 800; letter-spacing: 6px; color: #dc2626; margin: 12px 0;">{otp}</div>
+            <p style="color: #64748b; font-size: 13px; margin: 0;">Expires in {RESET_OTP_EXPIRY_MINUTES} minutes</p>
+        </div>
+        <p style="color: #334155; font-size: 14px; line-height: 1.5; margin: 0 0 16px 0;">
+            Use this code to reset your account password. If you did not request a password reset, you can safely ignore this email.
+        </p>
+        <p style="color: #94a3b8; font-size: 12px; line-height: 1.4; margin: 0; border-top: 1px solid #f1f5f9; padding-top: 16px;">
+            If you did not request a password reset, you can safely ignore this email.
+        </p>
+    </div>
+    """
 
+    if RESEND_API_KEY:
+        try:
+            resend.api_key = RESEND_API_KEY
+            params = {
+                "from": RESEND_FROM_EMAIL,
+                "to": [receiver_email],
+                "subject": subject,
+                "text": plain_text,
+                "html": html_content,
+            }
+            resend.Emails.send(params)
+            app.logger.info("Password reset OTP email sent via Resend HTTPS API.")
+            return
+        except Exception as exc:
+            app.logger.error("Resend API delivery error in send_password_reset_otp_email: %s: %s", type(exc).__name__, exc)
+            raise
+
+    # Fallback to Gmail SMTP if RESEND_API_KEY is not configured
+    if not MAIL_EMAIL or not MAIL_PASSWORD:
+        app.logger.error("Email Config Error: Neither RESEND_API_KEY nor MAIL_EMAIL/MAIL_PASSWORD is configured.")
+        raise smtplib.SMTPException("Email delivery service is not configured.")
+
+    email_message = f"Subject: {subject}\n\n{plain_text}"
     try:
         with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as server:
             server.starttls()
@@ -522,7 +599,7 @@ def register():
 
         try:
             send_otp_email(email, otp)
-        except (smtplib.SMTPException, OSError) as err:
+        except Exception as err:
             app.logger.error("Registration OTP dispatch error: %s: %s", type(err).__name__, err)
             pending_registrations.pop(email, None)
             flash("We could not send the verification email. Please try again.", "error")
@@ -641,7 +718,7 @@ def resend_otp():
     try:
         send_otp_email(email, new_otp)
         flash("A new verification code has been sent to your email.", "success")
-    except (smtplib.SMTPException, OSError) as err:
+    except Exception as err:
         app.logger.error("Resend OTP dispatch error: %s: %s", type(err).__name__, err)
         flash("We could not send a new verification code. Please try again.", "error")
 
@@ -724,7 +801,7 @@ def forgot_password():
         if user:
             try:
                 send_password_reset_otp_email(user["email"], otp)
-            except (smtplib.SMTPException, OSError) as err:
+            except Exception as err:
                 app.logger.error("Password reset OTP dispatch error: %s: %s", type(err).__name__, err)
                 clear_password_reset_request()
                 flash("We could not send a password reset email. Please try again.", "error")
@@ -1658,11 +1735,20 @@ def test_db():
     return "Database connected successfully!"
 
 
+@app.route("/test-email")
 @app.route("/test-smtp")
-def test_smtp():
+def test_email():
+    if RESEND_API_KEY:
+        try:
+            resend.api_key = RESEND_API_KEY
+            return f"Resend API is configured and ready for HTTPS email delivery from {RESEND_FROM_EMAIL}!", 200
+        except Exception as exc:
+            app.logger.error("Resend API Diagnostic Error: %s: %s", type(exc).__name__, exc)
+            return f"Resend API Error ({type(exc).__name__}): {exc}", 500
+
     if not MAIL_EMAIL or not MAIL_PASSWORD:
-        msg = "MAIL_EMAIL or MAIL_PASSWORD is not configured in environment variables."
-        app.logger.error("SMTP Diagnostic Failure: %s", msg)
+        msg = "Neither RESEND_API_KEY nor MAIL_EMAIL/MAIL_PASSWORD is configured in environment variables."
+        app.logger.error("Email Diagnostic Failure: %s", msg)
         return f"Configuration Error: {msg}", 500
     try:
         with smtplib.SMTP("smtp.gmail.com", 587, timeout=10) as server:
