@@ -4,8 +4,10 @@ import re
 import csv
 import io
 import hmac
+import urllib.parse as urlparse
 import mysql.connector
 from werkzeug.security import check_password_hash, generate_password_hash
+from werkzeug.middleware.proxy_fix import ProxyFix
 from dotenv import load_dotenv
 import os
 import random
@@ -28,6 +30,9 @@ app.config.update(
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=(os.getenv("FLASK_ENV") == "production" or os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true"),
 )
+
+# Support reverse proxy headers (e.g. Railway HTTPS termination)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
 if not app.config["SECRET_KEY"]:
     raise RuntimeError("FLASK_SECRET_KEY must be set in the .env file.")
@@ -77,7 +82,7 @@ ExpenseFlow Team
 
     email_message = f"Subject: {subject}\n\n{message}"
 
-    with smtplib.SMTP("smtp.gmail.com", 587) as server:
+    with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as server:
 
         server.starttls()
 
@@ -110,7 +115,7 @@ ExpenseFlow Team
 """
     email_message = f"Subject: {subject}\n\n{message}"
 
-    with smtplib.SMTP("smtp.gmail.com", 587) as server:
+    with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as server:
         server.starttls()
         server.login(MAIL_EMAIL, MAIL_PASSWORD)
         server.sendmail(MAIL_EMAIL, receiver_email, email_message)
@@ -120,18 +125,55 @@ ExpenseFlow Team
 # MYSQL CONNECTION & INITIALIZATION
 # -----------------------------------
 
-db = mysql.connector.connect(
-    host=os.getenv("DB_HOST", "localhost"),
-    port=int(os.getenv("DB_PORT", "3306")),
-    user=os.getenv("DB_USER"),
-    password=os.getenv("DB_PASSWORD"),
-    database=os.getenv("DB_NAME"),
-)
+def get_db_connection_params():
+    """Build database connection parameters supporting local .env and Railway MySQL."""
+    database_url = os.getenv("MYSQL_URL") or os.getenv("DATABASE_URL")
+    if database_url and database_url.startswith("mysql"):
+        parsed = urlparse.urlparse(database_url)
+        return {
+            "host": parsed.hostname or "localhost",
+            "port": int(parsed.port or 3306),
+            "user": parsed.username or None,
+            "password": parsed.password or None,
+            "database": parsed.path.lstrip("/") or None,
+            "autocommit": False,
+            "connection_timeout": 10,
+        }
+    return {
+        "host": os.getenv("DB_HOST") or os.getenv("MYSQLHOST") or "localhost",
+        "port": int(os.getenv("DB_PORT") or os.getenv("MYSQLPORT") or 3306),
+        "user": os.getenv("DB_USER") or os.getenv("MYSQLUSER"),
+        "password": os.getenv("DB_PASSWORD") or os.getenv("MYSQLPASSWORD"),
+        "database": os.getenv("DB_NAME") or os.getenv("MYSQLDATABASE"),
+        "autocommit": False,
+        "connection_timeout": 10,
+    }
+
+
+db = mysql.connector.connect(**get_db_connection_params())
+
+
+def ensure_db_connection():
+    """Reconnect to MySQL if the connection has been lost (e.g. idle timeout)."""
+    global db
+    try:
+        db.ping(reconnect=True, attempts=3, delay=1)
+    except mysql.connector.Error:
+        db = mysql.connector.connect(**get_db_connection_params())
 
 
 def initialize_tracker_tables():
-    """Create tracker and notifications tables without changing the existing users table."""
+    """Create all required tables in order, ensuring users exists before foreign keys."""
     cursor = db.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(120) NOT NULL,
+            email VARCHAR(255) NOT NULL UNIQUE,
+            password VARCHAR(255) NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS expenses (
             id INT AUTO_INCREMENT PRIMARY KEY,
@@ -188,6 +230,7 @@ initialize_tracker_tables()
 
 @app.before_request
 def csrf_protect():
+    ensure_db_connection()
     if "csrf_token" not in session:
         session["csrf_token"] = secrets.token_hex(32)
 
@@ -430,10 +473,6 @@ def register():
         if existing_user:
             flash("An account already exists with this email. Please log in.", "error")
             return render_template("register.html")
-
-
-        # -----------------------------------
-        # HASH PASSWORD
 
 
         # -----------------------------------
@@ -1609,5 +1648,8 @@ def test_db():
 # -----------------------------------
 
 if __name__ == "__main__":
-
-    app.run(debug=True)
+    port = int(os.getenv("PORT", 5000))
+    is_debug = os.getenv("FLASK_DEBUG", "false").lower() in ("true", "1") or (
+        os.getenv("FLASK_ENV") == "development"
+    )
+    app.run(host="0.0.0.0", port=port, debug=is_debug)

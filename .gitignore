@@ -2,3 +2,7 @@ venv/
 .env
 __pycache__/
 *.pyc
+e2e_report.json
+tests/e2e_report.json
+screenshots/
+*.log
