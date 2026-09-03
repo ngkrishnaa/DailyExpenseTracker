@@ -62,6 +62,9 @@ EXPENSES_PER_PAGE = 10
 # -----------------------------------
 
 def send_otp_email(receiver_email, otp):
+    if not MAIL_EMAIL or not MAIL_PASSWORD:
+        app.logger.error("SMTP Config Error: MAIL_EMAIL or MAIL_PASSWORD is not configured in environment variables.")
+        raise smtplib.SMTPException("MAIL_EMAIL or MAIL_PASSWORD is not configured.")
 
     subject = "Your ExpenseFlow Verification Code"
 
@@ -82,23 +85,28 @@ ExpenseFlow Team
 
     email_message = f"Subject: {subject}\n\n{message}"
 
-    with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as server:
-
-        server.starttls()
-
-        server.login(
-            MAIL_EMAIL,
-            MAIL_PASSWORD
-        )
-
-        server.sendmail(
-            MAIL_EMAIL,
-            receiver_email,
-            email_message
-        )
+    try:
+        with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as server:
+            server.starttls()
+            server.login(
+                MAIL_EMAIL,
+                MAIL_PASSWORD
+            )
+            server.sendmail(
+                MAIL_EMAIL,
+                receiver_email,
+                email_message
+            )
+    except Exception as exc:
+        app.logger.error("SMTP error in send_otp_email: %s: %s", type(exc).__name__, exc)
+        raise
 
 
 def send_password_reset_otp_email(receiver_email, otp):
+    if not MAIL_EMAIL or not MAIL_PASSWORD:
+        app.logger.error("SMTP Config Error: MAIL_EMAIL or MAIL_PASSWORD is not configured in environment variables.")
+        raise smtplib.SMTPException("MAIL_EMAIL or MAIL_PASSWORD is not configured.")
+
     subject = "Your ExpenseFlow Password Reset Code"
     message = f"""
 Hello,
@@ -115,10 +123,14 @@ ExpenseFlow Team
 """
     email_message = f"Subject: {subject}\n\n{message}"
 
-    with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as server:
-        server.starttls()
-        server.login(MAIL_EMAIL, MAIL_PASSWORD)
-        server.sendmail(MAIL_EMAIL, receiver_email, email_message)
+    try:
+        with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as server:
+            server.starttls()
+            server.login(MAIL_EMAIL, MAIL_PASSWORD)
+            server.sendmail(MAIL_EMAIL, receiver_email, email_message)
+    except Exception as exc:
+        app.logger.error("SMTP error in send_password_reset_otp_email: %s: %s", type(exc).__name__, exc)
+        raise
 
 
 # -----------------------------------
@@ -510,7 +522,8 @@ def register():
 
         try:
             send_otp_email(email, otp)
-        except (smtplib.SMTPException, OSError):
+        except (smtplib.SMTPException, OSError) as err:
+            app.logger.error("Registration OTP dispatch error: %s: %s", type(err).__name__, err)
             pending_registrations.pop(email, None)
             flash("We could not send the verification email. Please try again.", "error")
             return render_template("register.html")
@@ -628,7 +641,8 @@ def resend_otp():
     try:
         send_otp_email(email, new_otp)
         flash("A new verification code has been sent to your email.", "success")
-    except (smtplib.SMTPException, OSError):
+    except (smtplib.SMTPException, OSError) as err:
+        app.logger.error("Resend OTP dispatch error: %s: %s", type(err).__name__, err)
         flash("We could not send a new verification code. Please try again.", "error")
 
     return redirect(url_for("verify_otp", email=email))
@@ -710,7 +724,8 @@ def forgot_password():
         if user:
             try:
                 send_password_reset_otp_email(user["email"], otp)
-            except (smtplib.SMTPException, OSError):
+            except (smtplib.SMTPException, OSError) as err:
+                app.logger.error("Password reset OTP dispatch error: %s: %s", type(err).__name__, err)
                 clear_password_reset_request()
                 flash("We could not send a password reset email. Please try again.", "error")
                 return render_template("forgot_password.html")
@@ -1634,13 +1649,29 @@ def internal_error(error):
 
 
 # -----------------------------------
-# TEST DATABASE
+# TEST DATABASE & SMTP
 # -----------------------------------
 
 @app.route("/test-db")
 def test_db():
 
     return "Database connected successfully!"
+
+
+@app.route("/test-smtp")
+def test_smtp():
+    if not MAIL_EMAIL or not MAIL_PASSWORD:
+        msg = "MAIL_EMAIL or MAIL_PASSWORD is not configured in environment variables."
+        app.logger.error("SMTP Diagnostic Failure: %s", msg)
+        return f"Configuration Error: {msg}", 500
+    try:
+        with smtplib.SMTP("smtp.gmail.com", 587, timeout=10) as server:
+            server.starttls()
+            server.login(MAIL_EMAIL, MAIL_PASSWORD)
+            return "SMTP connected and authenticated successfully!", 200
+    except Exception as exc:
+        app.logger.error("SMTP Diagnostic Error: %s: %s", type(exc).__name__, exc)
+        return f"SMTP Error ({type(exc).__name__}): {exc}", 500
 
 
 # -----------------------------------
