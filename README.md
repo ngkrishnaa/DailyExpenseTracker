@@ -4,6 +4,7 @@ ExpenseFlow is a Flask and MySQL web application for securely tracking personal 
 
 ## Features
 
+- Google Sign-In (OAuth 2.0) with seamless account creation and existing user linking
 - Email-verified registration, login/logout, sessions, and password recovery by OTP
 - Personal dashboard with monthly, daily, budget, and category summaries
 - Create, search, filter, sort, edit, and delete your own expenses
@@ -17,7 +18,8 @@ ExpenseFlow is a Flask and MySQL web application for securely tracking personal 
 - Python, Flask, Jinja templates
 - MySQL and `mysql-connector-python`
 - HTML, CSS, JavaScript, Chart.js
-- Werkzeug password hashing and Gmail SMTP OTP delivery
+- Google OAuth 2.0 authorization code flow (`requests`)
+- Werkzeug password hashing and Resend API / Gmail SMTP OTP delivery
 
 ## Setup
 
@@ -41,15 +43,20 @@ ExpenseFlow is a Flask and MySQL web application for securely tracking personal 
    ```env
    MAIL_EMAIL=your-gmail-address
    MAIL_PASSWORD=your-gmail-app-password
+   RESEND_API_KEY=re_your_resend_api_key_here
+   RESEND_FROM_EMAIL=ExpenseFlow <onboarding@resend.dev>
    DB_HOST=localhost
    DB_PORT=3306
    DB_USER=root
    DB_PASSWORD=your-database-password
    DB_NAME=daily_expense_tracker
    FLASK_SECRET_KEY=a-long-random-secret-value
+   GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+   GOOGLE_CLIENT_SECRET=your-client-secret
+   GOOGLE_REDIRECT_URI=http://localhost:5000/login/google/callback
    ```
 
-   For Gmail, use an app password rather than your normal Gmail password.
+   For Google Sign-In, create OAuth 2.0 Credentials in Google Cloud Console and add Authorized Redirect URIs for local development and production.
 
 5. Run the application.
 

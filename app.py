@@ -14,6 +14,7 @@ import random
 import secrets
 import smtplib
 import resend
+import requests
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 
@@ -26,6 +27,13 @@ raw_resend_from = os.getenv("RESEND_FROM_EMAIL", "ExpenseFlow <onboarding@resend
 RESEND_FROM_EMAIL = raw_resend_from.strip().strip('"\'') if raw_resend_from else "ExpenseFlow <onboarding@resend.dev>"
 if RESEND_API_KEY:
     resend.api_key = RESEND_API_KEY
+
+raw_google_client_id = os.getenv("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_ID = raw_google_client_id.strip().strip('"\'') if raw_google_client_id else None
+raw_google_client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
+GOOGLE_CLIENT_SECRET = raw_google_client_secret.strip().strip('"\'') if raw_google_client_secret else None
+raw_google_redirect_uri = os.getenv("GOOGLE_REDIRECT_URI")
+GOOGLE_REDIRECT_URI = raw_google_redirect_uri.strip().strip('"\'') if raw_google_redirect_uri else None
 
 MAIL_EMAIL = os.getenv("MAIL_EMAIL")
 # Sanitize spaces if present in Gmail App Password for SMTP fallback
@@ -284,10 +292,35 @@ def initialize_tracker_tables():
             id INT AUTO_INCREMENT PRIMARY KEY,
             name VARCHAR(120) NOT NULL,
             email VARCHAR(255) NOT NULL UNIQUE,
-            password VARCHAR(255) NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            password VARCHAR(255) NULL,
+            google_id VARCHAR(255) NULL,
+            auth_provider VARCHAR(50) NOT NULL DEFAULT 'local',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_users_google_id (google_id)
         )
     """)
+
+    # Backward-compatible migrations for existing users table
+    cursor.execute("SHOW COLUMNS FROM users LIKE 'google_id'")
+    if not cursor.fetchone():
+        try:
+            cursor.execute("ALTER TABLE users ADD COLUMN google_id VARCHAR(255) NULL AFTER password")
+            cursor.execute("ALTER TABLE users ADD INDEX idx_users_google_id (google_id)")
+        except Exception as mig_err:
+            app.logger.warning("Migration note for google_id: %s", mig_err)
+
+    cursor.execute("SHOW COLUMNS FROM users LIKE 'auth_provider'")
+    if not cursor.fetchone():
+        try:
+            cursor.execute("ALTER TABLE users ADD COLUMN auth_provider VARCHAR(50) NOT NULL DEFAULT 'local' AFTER google_id")
+        except Exception as mig_err:
+            app.logger.warning("Migration note for auth_provider: %s", mig_err)
+
+    try:
+        cursor.execute("ALTER TABLE users MODIFY COLUMN password VARCHAR(255) NULL")
+    except Exception as mig_err:
+        app.logger.warning("Migration note for password column: %s", mig_err)
+
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS expenses (
             id INT AUTO_INCREMENT PRIMARY KEY,
@@ -585,7 +618,7 @@ def register():
 
 
         if existing_user:
-            flash("An account already exists with this email. Please log in.", "error")
+            flash("An account with this email already exists. Please log in instead.", "error")
             return render_template("register.html")
 
 
@@ -751,6 +784,228 @@ def resend_otp():
 
 
 # -----------------------------------
+# GOOGLE OAUTH AUTHENTICATION
+# -----------------------------------
+
+def get_google_redirect_uri():
+    """Build the OAuth redirect URI, prioritizing environment override or public production domain."""
+    if GOOGLE_REDIRECT_URI:
+        return GOOGLE_REDIRECT_URI
+    railway_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN") or os.getenv("RAILWAY_STATIC_URL")
+    if railway_domain:
+        return f"https://{railway_domain}/login/google/callback"
+    return url_for("google_callback", _external=True)
+
+
+@app.route("/login/google")
+def google_login():
+    if "user_id" in session:
+        return redirect(url_for("dashboard"))
+
+    if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
+        app.logger.warning("Google Sign-In attempted but GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET is missing.")
+        flash("Google Sign-In is not currently configured. Please check server settings.", "error")
+        return redirect(url_for("login"))
+
+    oauth_state = secrets.token_urlsafe(32)
+    session["google_oauth_state"] = oauth_state
+
+    redirect_uri = get_google_redirect_uri()
+    params = {
+        "client_id": GOOGLE_CLIENT_ID,
+        "redirect_uri": redirect_uri,
+        "response_type": "code",
+        "scope": "openid email profile",
+        "state": oauth_state,
+        "access_type": "online",
+        "prompt": "select_account",
+    }
+    auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{urlparse.urlencode(params)}"
+    return redirect(auth_url)
+
+
+@app.route("/login/google/callback")
+def google_callback():
+    if "user_id" in session:
+        return redirect(url_for("dashboard"))
+
+    # 1. Check for user cancellation or Google error
+    error = request.args.get("error")
+    if error:
+        app.logger.info("Google OAuth returned error or user cancelled: %s", error)
+        flash("Google Sign-In was cancelled or denied.", "error")
+        return redirect(url_for("login"))
+
+    # 2. Validate OAuth state parameter
+    state = request.args.get("state")
+    expected_state = session.pop("google_oauth_state", None)
+    if not state or not expected_state or not hmac.compare_digest(str(state), str(expected_state)):
+        app.logger.warning("Google OAuth state verification mismatch.")
+        flash("Authentication failed: invalid session state. Please try again.", "error")
+        return redirect(url_for("login"))
+
+    # 3. Verify code presence
+    code = request.args.get("code")
+    if not code:
+        flash("Authorization code missing from Google. Please try again.", "error")
+        return redirect(url_for("login"))
+
+    # 4. Exchange code for access token via secure server-to-server POST
+    redirect_uri = get_google_redirect_uri()
+    token_url = "https://oauth2.googleapis.com/token"
+    token_data = {
+        "code": code,
+        "client_id": GOOGLE_CLIENT_ID,
+        "client_secret": GOOGLE_CLIENT_SECRET,
+        "redirect_uri": redirect_uri,
+        "grant_type": "authorization_code",
+    }
+
+    try:
+        token_resp = requests.post(token_url, data=token_data, timeout=10)
+        token_json = token_resp.json()
+    except Exception as exc:
+        app.logger.error("Failed to connect to Google token exchange endpoint: %s", type(exc).__name__)
+        flash("Could not connect to Google authentication service. Please try again.", "error")
+        return redirect(url_for("login"))
+
+    if token_resp.status_code != 200 or "access_token" not in token_json:
+        app.logger.error("Google token exchange failed with HTTP status %s", token_resp.status_code)
+        flash("Failed to authenticate with Google. Please try again.", "error")
+        return redirect(url_for("login"))
+
+    access_token = token_json["access_token"]
+
+    # 5. Retrieve verified identity from Google UserInfo endpoint
+    userinfo_url = "https://openidconnect.googleapis.com/v1/userinfo"
+    try:
+        userinfo_resp = requests.get(
+            userinfo_url,
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=10,
+        )
+        userinfo = userinfo_resp.json()
+    except Exception as exc:
+        app.logger.error("Failed to connect to Google userinfo endpoint: %s", type(exc).__name__)
+        flash("Could not retrieve user profile from Google. Please try again.", "error")
+        return redirect(url_for("login"))
+
+    if userinfo_resp.status_code != 200:
+        app.logger.error("Google userinfo request failed with HTTP status %s", userinfo_resp.status_code)
+        flash("Failed to retrieve your Google profile. Please try again.", "error")
+        return redirect(url_for("login"))
+
+    google_id = str(userinfo.get("sub", "")).strip()
+    email = str(userinfo.get("email", "")).strip().lower()
+    email_verified = userinfo.get("email_verified", False)
+    is_verified = (email_verified is True or str(email_verified).lower() == "true")
+    name = str(userinfo.get("name") or email.split("@")[0]).strip()[:100]
+
+    if not email:
+        flash("Google did not return a valid email address. Please check your account permissions.", "error")
+        return redirect(url_for("login"))
+
+    if not is_verified:
+        flash("Your Google email address is not verified by Google. Please verify your email with Google first.", "error")
+        return redirect(url_for("login"))
+
+    # 6. Check whether google_id already exists in the database
+    user_by_google_id = None
+    if google_id:
+        try:
+            cursor = db.cursor(dictionary=True)
+            cursor.execute(
+                "SELECT id, name, email, password, auth_provider, google_id FROM users WHERE google_id = %s",
+                (google_id,),
+            )
+            user_by_google_id = cursor.fetchone()
+            cursor.close()
+        except Exception as exc:
+            app.logger.error("Database error querying user by google_id: %s", type(exc).__name__)
+            flash("A database error occurred. Please try again.", "error")
+            return redirect(url_for("login"))
+
+    if user_by_google_id:
+        session.clear()
+        session.permanent = True
+        session["user_id"] = user_by_google_id["id"]
+        session["user_name"] = user_by_google_id["name"]
+        session["user_email"] = user_by_google_id["email"]
+        flash(f"Welcome back, {user_by_google_id['name']}!", "success")
+        return redirect(url_for("dashboard"))
+
+    # 7. Check whether the email already exists in the database
+    try:
+        cursor = db.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT id, name, email, password, auth_provider, google_id FROM users WHERE email = %s",
+            (email,),
+        )
+        existing_email_user = cursor.fetchone()
+        cursor.close()
+    except Exception as exc:
+        app.logger.error("Database error querying user by email: %s", type(exc).__name__)
+        flash("A database error occurred. Please try again.", "error")
+        return redirect(url_for("login"))
+
+    if existing_email_user:
+        # CASE A & B: Email exists - safely link Google authentication to existing account
+        try:
+            update_cursor = db.cursor()
+            update_cursor.execute(
+                "UPDATE users SET google_id = %s, auth_provider = 'google' WHERE id = %s",
+                (google_id, existing_email_user["id"]),
+            )
+            db.commit()
+            update_cursor.close()
+        except Exception as exc:
+            app.logger.error("Database error linking Google account: %s", type(exc).__name__)
+
+        session.clear()
+        session.permanent = True
+        session["user_id"] = existing_email_user["id"]
+        session["user_name"] = existing_email_user["name"]
+        session["user_email"] = existing_email_user["email"]
+
+        if existing_email_user.get("google_id"):
+            flash(f"Welcome back, {existing_email_user['name']}!", "success")
+        else:
+            flash("Your Google account has been securely linked. Welcome to ExpenseFlow!", "success")
+        return redirect(url_for("dashboard"))
+
+    # CASE C: Email does not exist - create new Google account (no password required)
+    random_pw_hash = generate_password_hash(secrets.token_urlsafe(32))
+    try:
+        insert_cursor = db.cursor()
+        insert_cursor.execute(
+            """
+            INSERT INTO users (name, email, password, google_id, auth_provider)
+            VALUES (%s, %s, %s, %s, 'google')
+            """,
+            (name, email, random_pw_hash, google_id or None),
+        )
+        db.commit()
+        user_id = insert_cursor.lastrowid
+        insert_cursor.close()
+    except mysql.connector.Error as err:
+        if err.errno == 1062 or "Duplicate entry" in str(err):
+            flash("An account with this email already exists. Please log in instead.", "error")
+            return redirect(url_for("login"))
+        app.logger.error("Database error inserting new Google user: %s", type(err).__name__)
+        flash("Could not create account. Please try again.", "error")
+        return redirect(url_for("register"))
+
+    session.clear()
+    session.permanent = True
+    session["user_id"] = user_id
+    session["user_name"] = name
+    session["user_email"] = email
+
+    flash("Account created successfully with Google. Welcome to ExpenseFlow!", "success")
+    return redirect(url_for("dashboard"))
+
+
+# -----------------------------------
 # LOGIN / LOGOUT
 # -----------------------------------
 
@@ -765,14 +1020,17 @@ def login():
 
         cursor = db.cursor(dictionary=True)
         cursor.execute(
-            "SELECT id, name, email, password FROM users WHERE email = %s",
+            "SELECT id, name, email, password, auth_provider, google_id FROM users WHERE email = %s",
             (email,)
         )
         user = cursor.fetchone()
         cursor.close()
 
-        if not user or not check_password_hash(user["password"], password):
-            flash("Invalid email or password.", "error")
+        if not user or not user["password"] or not check_password_hash(user["password"], password):
+            if user and user.get("google_id"):
+                flash("This account uses Google sign-in. Please continue with Google.", "error")
+            else:
+                flash("Invalid email or password.", "error")
             return render_template("login.html", email=email)
 
         session.clear()
@@ -785,6 +1043,8 @@ def login():
         return redirect(url_for("dashboard"))
 
     return render_template("login.html")
+
+
 
 
 # -----------------------------------

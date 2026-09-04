@@ -925,6 +925,213 @@ class ExpenseFlowTestSuite(unittest.TestCase):
         finally:
             flask_app.config["WTF_CSRF_ENABLED"] = False
 
+    # -------------------------------------------------------------
+    # 10. GOOGLE OAUTH AUTHENTICATION TESTS
+    # -------------------------------------------------------------
+    def test_google_auth_buttons_rendered_on_login_and_register(self):
+        # Verify /login renders the Google button and divider
+        res_login = self.client.get("/login")
+        self.assertEqual(res_login.status_code, 200)
+        self.assertIn(b"Continue with Google", res_login.data)
+        self.assertIn(b"google-login-btn", res_login.data)
+        self.assertIn(b"auth-divider", res_login.data)
+
+        # Verify /register renders the Google button and divider
+        res_reg = self.client.get("/register")
+        self.assertEqual(res_reg.status_code, 200)
+        self.assertIn(b"Continue with Google", res_reg.data)
+        self.assertIn(b"google-register-btn", res_reg.data)
+        self.assertIn(b"auth-divider", res_reg.data)
+
+    def test_google_login_not_configured(self):
+        with patch.object(app, "GOOGLE_CLIENT_ID", None), patch.object(app, "GOOGLE_CLIENT_SECRET", None):
+            res = self.client.get("/login/google", follow_redirects=True)
+            self.assertEqual(res.status_code, 200)
+            self.assertIn(b"Google Sign-In is not currently configured", res.data)
+
+    def test_google_login_redirect_and_state(self):
+        with patch.object(app, "GOOGLE_CLIENT_ID", "mock_client_id_123"), \
+             patch.object(app, "GOOGLE_CLIENT_SECRET", "mock_secret_456"):
+            res = self.client.get("/login/google")
+            self.assertEqual(res.status_code, 302)
+            self.assertIn("accounts.google.com/o/oauth2/v2/auth", res.headers["Location"])
+            self.assertIn("client_id=mock_client_id_123", res.headers["Location"])
+            self.assertIn("scope=openid+email+profile", res.headers["Location"])
+            with self.client.session_transaction() as sess:
+                self.assertIn("google_oauth_state", sess)
+                self.assertTrue(len(sess["google_oauth_state"]) > 20)
+
+    def test_google_callback_user_cancelled(self):
+        res = self.client.get("/login/google/callback?error=access_denied", follow_redirects=True)
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b"Google Sign-In was cancelled or denied", res.data)
+
+    def test_google_callback_state_mismatch(self):
+        with self.client.session_transaction() as sess:
+            sess["google_oauth_state"] = "expected_state_abc"
+
+        res = self.client.get("/login/google/callback?code=some_code&state=wrong_state", follow_redirects=True)
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b"invalid session state", res.data)
+
+    @patch("requests.get")
+    @patch("requests.post")
+    def test_google_callback_new_user_creation(self, mock_post, mock_get):
+        new_google_email = f"google_user_{datetime.now().strftime('%Y%m%d%H%M%S%f')}@gmail.com"
+        mock_post.return_value.status_code = 200
+        mock_post.return_value.json.return_value = {"access_token": "mock_token_123"}
+
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = {
+            "sub": "google_sub_987654",
+            "email": new_google_email,
+            "email_verified": True,
+            "name": "Google Explorer",
+        }
+
+        with patch.object(app, "GOOGLE_CLIENT_ID", "mock_client_id_123"), \
+             patch.object(app, "GOOGLE_CLIENT_SECRET", "mock_secret_456"):
+            with self.client.session_transaction() as sess:
+                sess["google_oauth_state"] = "valid_state_token"
+
+            res = self.client.get("/login/google/callback?code=mock_code&state=valid_state_token", follow_redirects=True)
+            self.assertEqual(res.status_code, 200)
+            self.assertIn(b"Account created successfully with Google", res.data)
+
+            # Confirm user in DB
+            cursor = db.cursor(dictionary=True)
+            cursor.execute("SELECT id, name, email, auth_provider, google_id FROM users WHERE email = %s", (new_google_email,))
+            created = cursor.fetchone()
+            cursor.close()
+
+            self.assertIsNotNone(created)
+            self.assertEqual(created["name"], "Google Explorer")
+            self.assertEqual(created["auth_provider"], "google")
+            self.assertEqual(created["google_id"], "google_sub_987654")
+            self.created_user_ids.append(created["id"])
+
+            # Verify session
+            with self.client.session_transaction() as sess:
+                self.assertEqual(sess.get("user_id"), created["id"])
+                self.assertEqual(sess.get("user_email"), new_google_email)
+
+    @patch("requests.get")
+    @patch("requests.post")
+    def test_google_callback_existing_local_user_linking(self, mock_post, mock_get):
+        # Create an existing local password user
+        local_email = f"local_user_{datetime.now().strftime('%Y%m%d%H%M%S%f')}@gmail.com"
+        user_id = self.create_user_direct("Local User", local_email, self.test_password)
+
+        mock_post.return_value.status_code = 200
+        mock_post.return_value.json.return_value = {"access_token": "mock_token_123"}
+
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = {
+            "sub": "google_sub_linked_123",
+            "email": local_email,
+            "email_verified": True,
+            "name": "Local User Linked",
+        }
+
+        with patch.object(app, "GOOGLE_CLIENT_ID", "mock_client_id_123"), \
+             patch.object(app, "GOOGLE_CLIENT_SECRET", "mock_secret_456"):
+            with self.client.session_transaction() as sess:
+                sess["google_oauth_state"] = "valid_state_token"
+
+            res = self.client.get("/login/google/callback?code=mock_code&state=valid_state_token", follow_redirects=True)
+            self.assertEqual(res.status_code, 200)
+            self.assertIn(b"Your Google account has been securely linked", res.data)
+
+            # Confirm session was established with the existing user ID
+            with self.client.session_transaction() as sess:
+                self.assertEqual(sess.get("user_id"), user_id)
+                self.assertEqual(sess.get("user_email"), local_email)
+
+            # Confirm google_id and auth_provider updated in DB
+            cursor = db.cursor(dictionary=True)
+            cursor.execute("SELECT id, google_id, auth_provider FROM users WHERE id = %s", (user_id,))
+            updated_user = cursor.fetchone()
+            cursor.close()
+            self.assertEqual(updated_user["google_id"], "google_sub_linked_123")
+            self.assertEqual(updated_user["auth_provider"], "google")
+
+    @patch("requests.get")
+    @patch("requests.post")
+    def test_google_callback_existing_google_user_relogin(self, mock_post, mock_get):
+        # Create an existing Google user
+        google_email = f"existing_google_{datetime.now().strftime('%Y%m%d%H%M%S%f')}@gmail.com"
+        google_sub = "google_sub_existing_111"
+        cursor = db.cursor()
+        cursor.execute(
+            "INSERT INTO users (name, email, password, google_id, auth_provider) VALUES (%s, %s, %s, %s, 'google')",
+            ("Existing Google", google_email, generate_password_hash("random_dummy"), google_sub)
+        )
+        db.commit()
+        user_id = cursor.lastrowid
+        cursor.close()
+        self.created_user_ids.append(user_id)
+
+        mock_post.return_value.status_code = 200
+        mock_post.return_value.json.return_value = {"access_token": "mock_token_123"}
+
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = {
+            "sub": google_sub,
+            "email": google_email,
+            "email_verified": True,
+            "name": "Existing Google",
+        }
+
+        with patch.object(app, "GOOGLE_CLIENT_ID", "mock_client_id_123"), \
+             patch.object(app, "GOOGLE_CLIENT_SECRET", "mock_secret_456"):
+            with self.client.session_transaction() as sess:
+                sess["google_oauth_state"] = "valid_state_token"
+
+            res = self.client.get("/login/google/callback?code=mock_code&state=valid_state_token", follow_redirects=True)
+            self.assertEqual(res.status_code, 200)
+            self.assertIn(b"Welcome back, Existing Google!", res.data)
+
+            with self.client.session_transaction() as sess:
+                self.assertEqual(sess.get("user_id"), user_id)
+                self.assertEqual(sess.get("user_email"), google_email)
+
+    def test_duplicate_email_registration_rejected(self):
+        # Create user
+        existing_email = f"duplicate_test_{datetime.now().strftime('%Y%m%d%H%M%S%f')}@example.com"
+        self.create_user_direct("Existing User", existing_email, self.test_password)
+
+        # Attempt to register with the same email
+        res = self.client.post("/register", data={
+            "name": "Another Person",
+            "email": existing_email,
+            "password": "Password123!",
+            "confirm_password": "Password123!"
+        })
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b"An account with this email already exists. Please log in instead.", res.data)
+
+    def test_google_only_account_password_login_shows_guidance(self):
+        google_email = f"google_only_{datetime.now().strftime('%Y%m%d%H%M%S%f')}@example.com"
+        cursor = db.cursor()
+        cursor.execute(
+            "INSERT INTO users (name, email, password, google_id, auth_provider) VALUES (%s, %s, %s, %s, 'google')",
+            ("Google Only", google_email, generate_password_hash("unguessable_hash"), "google_id_777")
+        )
+        db.commit()
+        user_id = cursor.lastrowid
+        cursor.close()
+        self.created_user_ids.append(user_id)
+
+        # Attempt password login
+        res = self.client.post("/login", data={
+            "email": google_email,
+            "password": "WrongPassword123"
+        })
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b"This account uses Google sign-in. Please continue with Google.", res.data)
+
 
 if __name__ == "__main__":
     unittest.main()
+
+

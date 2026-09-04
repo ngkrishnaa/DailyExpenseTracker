@@ -1067,6 +1067,74 @@ footer small {
     transform: translateX(4px);
 }
 
+.auth-divider {
+    display: flex;
+    align-items: center;
+    text-align: center;
+    margin: 20px 0 16px 0;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+    content: "";
+    flex: 1;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.auth-divider span {
+    padding: 0 14px;
+    color: var(--text-muted);
+}
+
+.google-auth-btn {
+    width: 100%;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-sizing: border-box;
+}
+
+.google-auth-btn:hover {
+    background: rgba(255, 255, 255, 0.09);
+    border-color: rgba(255, 255, 255, 0.25);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    color: #ffffff;
+}
+
+.google-auth-btn:active {
+    transform: translateY(0);
+}
+
+.google-auth-btn.is-loading {
+    opacity: 0.7;
+    cursor: wait;
+    pointer-events: none;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.google-icon {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+}
+
 .login-prompt {
     text-align: center;
     margin-top: 22px;
