@@ -54,6 +54,17 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 if not app.config["SECRET_KEY"]:
     raise RuntimeError("FLASK_SECRET_KEY must be set in the .env file.")
 
+# Log Google OAuth configuration state safely (without logging secrets)
+app.logger.info(
+    "Google OAuth init: client_id_configured=%s (valid_suffix=%s), client_secret_configured=%s (starts_with_gocspx=%s, len=%d), redirect_uri=%s",
+    bool(GOOGLE_CLIENT_ID),
+    bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_ID.endswith(".apps.googleusercontent.com")),
+    bool(GOOGLE_CLIENT_SECRET),
+    bool(GOOGLE_CLIENT_SECRET and GOOGLE_CLIENT_SECRET.startswith("GOCSPX-")),
+    len(GOOGLE_CLIENT_SECRET) if GOOGLE_CLIENT_SECRET else 0,
+    GOOGLE_REDIRECT_URI or "dynamic",
+)
+
 # Temporary storage for registrations waiting for OTP verification
 pending_registrations = {}
 REGISTRATION_OTP_EXPIRY_MINUTES = 10
@@ -863,15 +874,37 @@ def google_callback():
 
     try:
         token_resp = requests.post(token_url, data=token_data, timeout=10)
-        token_json = token_resp.json()
+        try:
+            token_json = token_resp.json()
+        except Exception:
+            token_json = {}
     except Exception as exc:
         app.logger.error("Failed to connect to Google token exchange endpoint: %s", type(exc).__name__)
         flash("Could not connect to Google authentication service. Please try again.", "error")
         return redirect(url_for("login"))
 
     if token_resp.status_code != 200 or "access_token" not in token_json:
-        app.logger.error("Google token exchange failed with HTTP status %s", token_resp.status_code)
-        flash("Failed to authenticate with Google. Please try again.", "error")
+        oauth_error = token_json.get("error", "unknown") if isinstance(token_json, dict) else "unknown"
+        oauth_error_desc = token_json.get("error_description", "") if isinstance(token_json, dict) else ""
+        app.logger.error(
+            "Google token exchange failed: HTTP %s, error='%s', description='%s'",
+            token_resp.status_code,
+            oauth_error,
+            oauth_error_desc,
+        )
+        if oauth_error == "invalid_client":
+            flash(
+                "Google Sign-In configuration error: The provided Google Client Secret is invalid. "
+                "Please verify the client secret in your environment variables.",
+                "error",
+            )
+        elif oauth_error == "redirect_uri_mismatch":
+            flash(
+                "Google Sign-In configuration error: The redirect URI does not match Google Cloud Console settings.",
+                "error",
+            )
+        else:
+            flash("Failed to authenticate with Google. Please try again.", "error")
         return redirect(url_for("login"))
 
     access_token = token_json["access_token"]
