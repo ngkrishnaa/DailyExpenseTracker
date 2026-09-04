@@ -1751,6 +1751,16 @@ def test_db():
 @app.route("/test-smtp")
 def test_email():
     if RESEND_API_KEY:
+        # Diagnostic check for obviously truncated or masked placeholder keys
+        if len(RESEND_API_KEY) < 20 or RESEND_API_KEY.endswith(".."):
+            err_msg = (
+                f"RESEND_API_KEY appears to be a truncated or masked preview ({len(RESEND_API_KEY)} chars, ending with '..'). "
+                "Resend API keys are ~36 characters long and start with 're_'. "
+                "Please copy the full API key generated in the Resend dashboard dialog and configure it in Railway."
+            )
+            app.logger.error("Resend API Key Error: %s", err_msg)
+            return f"Resend API Configuration Error: {err_msg}", 500
+
         to_email = request.args.get("to", "").strip().lower()
         if to_email:
             try:
@@ -1787,6 +1797,12 @@ def test_email():
                     if dom_names:
                         dom_summary = f"Configured domain(s): {', '.join(dom_names)}"
             except Exception as dom_exc:
+                err_code = getattr(dom_exc, "code", None)
+                err_msg_lower = getattr(dom_exc, "message", str(dom_exc)).lower()
+                if err_code in (401, "401") or "malformed" in err_msg_lower or "unauthorized" in err_msg_lower:
+                    formatted_err = format_resend_error(dom_exc)
+                    app.logger.error("Resend API Authentication Failed: %s", formatted_err)
+                    return f"Resend API Authentication Failed ({formatted_err}). Please verify your RESEND_API_KEY in Railway.", 500
                 app.logger.info("Resend Domains probe info: %s", format_resend_error(dom_exc))
 
             return (
