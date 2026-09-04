@@ -20,8 +20,10 @@ from decimal import Decimal, InvalidOperation
 # Load values from .env
 load_dotenv()
 
-RESEND_API_KEY = os.getenv("RESEND_API_KEY")
-RESEND_FROM_EMAIL = os.getenv("RESEND_FROM_EMAIL", "ExpenseFlow <onboarding@resend.dev>")
+raw_resend_key = os.getenv("RESEND_API_KEY")
+RESEND_API_KEY = raw_resend_key.strip().strip('"\'') if raw_resend_key else None
+raw_resend_from = os.getenv("RESEND_FROM_EMAIL", "ExpenseFlow <onboarding@resend.dev>")
+RESEND_FROM_EMAIL = raw_resend_from.strip().strip('"\'') if raw_resend_from else "ExpenseFlow <onboarding@resend.dev>"
 if RESEND_API_KEY:
     resend.api_key = RESEND_API_KEY
 
@@ -62,6 +64,14 @@ PAYMENT_METHODS = (
     "Cash", "Credit Card", "Debit Card", "UPI", "Bank Transfer", "Other",
 )
 EXPENSES_PER_PAGE = 10
+
+
+def format_resend_error(exc):
+    """Safely extract error code, type, and message from exceptions without exposing secrets."""
+    err_code = getattr(exc, "code", "N/A")
+    err_type = getattr(exc, "error_type", type(exc).__name__)
+    err_msg = getattr(exc, "message", str(exc))
+    return f"[{err_code} - {err_type}] {err_msg}"
 
 
 # -----------------------------------
@@ -113,11 +123,12 @@ ExpenseFlow Team
                 "text": plain_text,
                 "html": html_content,
             }
-            resend.Emails.send(params)
-            app.logger.info("OTP verification email sent via Resend HTTPS API.")
+            resp = resend.Emails.send(params)
+            email_id = getattr(resp, "id", None) or (resp.get("id") if isinstance(resp, dict) else str(resp))
+            app.logger.info("OTP verification email sent via Resend HTTPS API. ID: %s", email_id)
             return
         except Exception as exc:
-            app.logger.error("Resend API delivery error in send_otp_email: %s: %s", type(exc).__name__, exc)
+            app.logger.error("Resend API delivery error in send_otp_email: %s", format_resend_error(exc))
             raise
 
     # Fallback to Gmail SMTP if RESEND_API_KEY is not configured
@@ -187,11 +198,12 @@ ExpenseFlow Team
                 "text": plain_text,
                 "html": html_content,
             }
-            resend.Emails.send(params)
-            app.logger.info("Password reset OTP email sent via Resend HTTPS API.")
+            resp = resend.Emails.send(params)
+            email_id = getattr(resp, "id", None) or (resp.get("id") if isinstance(resp, dict) else str(resp))
+            app.logger.info("Password reset OTP email sent via Resend HTTPS API. ID: %s", email_id)
             return
         except Exception as exc:
-            app.logger.error("Resend API delivery error in send_password_reset_otp_email: %s: %s", type(exc).__name__, exc)
+            app.logger.error("Resend API delivery error in send_password_reset_otp_email: %s", format_resend_error(exc))
             raise
 
     # Fallback to Gmail SMTP if RESEND_API_KEY is not configured
@@ -600,7 +612,7 @@ def register():
         try:
             send_otp_email(email, otp)
         except Exception as err:
-            app.logger.error("Registration OTP dispatch error: %s: %s", type(err).__name__, err)
+            app.logger.error("Registration OTP dispatch error: %s", format_resend_error(err))
             pending_registrations.pop(email, None)
             flash("We could not send the verification email. Please try again.", "error")
             return render_template("register.html")
@@ -719,7 +731,7 @@ def resend_otp():
         send_otp_email(email, new_otp)
         flash("A new verification code has been sent to your email.", "success")
     except Exception as err:
-        app.logger.error("Resend OTP dispatch error: %s: %s", type(err).__name__, err)
+        app.logger.error("Resend OTP dispatch error: %s", format_resend_error(err))
         flash("We could not send a new verification code. Please try again.", "error")
 
     return redirect(url_for("verify_otp", email=email))
@@ -802,7 +814,7 @@ def forgot_password():
             try:
                 send_password_reset_otp_email(user["email"], otp)
             except Exception as err:
-                app.logger.error("Password reset OTP dispatch error: %s: %s", type(err).__name__, err)
+                app.logger.error("Password reset OTP dispatch error: %s", format_resend_error(err))
                 clear_password_reset_request()
                 flash("We could not send a password reset email. Please try again.", "error")
                 return render_template("forgot_password.html")
@@ -1739,12 +1751,54 @@ def test_db():
 @app.route("/test-smtp")
 def test_email():
     if RESEND_API_KEY:
+        to_email = request.args.get("to", "").strip().lower()
+        if to_email:
+            try:
+                resend.api_key = RESEND_API_KEY
+                params = {
+                    "from": RESEND_FROM_EMAIL,
+                    "to": [to_email],
+                    "subject": "ExpenseFlow Diagnostic Test Email",
+                    "text": "Hello, this is a diagnostic test email from ExpenseFlow via Resend HTTPS API.",
+                    "html": "<p>Hello,<br><br>This is a diagnostic test email from <strong>ExpenseFlow</strong> via Resend HTTPS API.</p>",
+                }
+                resp = resend.Emails.send(params)
+                email_id = getattr(resp, "id", None) or (resp.get("id") if isinstance(resp, dict) else str(resp))
+                app.logger.info("Diagnostic test email delivered to %s: ID %s", to_email, email_id)
+                return (
+                    f"Resend Test Email SUCCESS! Sent from '{RESEND_FROM_EMAIL}' to '{to_email}'. "
+                    f"Resend Email ID: {email_id}",
+                    200,
+                )
+            except Exception as exc:
+                formatted_err = format_resend_error(exc)
+                app.logger.error("Resend Test Email Dispatch Failure: %s", formatted_err)
+                return f"Resend Test Email FAILED ({formatted_err})", 500
+
+        # Live probe when no ?to parameter is provided
         try:
             resend.api_key = RESEND_API_KEY
-            return f"Resend API is configured and ready for HTTPS email delivery from {RESEND_FROM_EMAIL}!", 200
+            dom_summary = "API key active with sending permissions."
+            try:
+                domains_resp = resend.Domains.list()
+                if domains_resp:
+                    dom_list = domains_resp.get("data", []) if isinstance(domains_resp, dict) else getattr(domains_resp, "data", [])
+                    dom_names = [d.get("name", "") if isinstance(d, dict) else getattr(d, "name", "") for d in dom_list]
+                    if dom_names:
+                        dom_summary = f"Configured domain(s): {', '.join(dom_names)}"
+            except Exception as dom_exc:
+                app.logger.info("Resend Domains probe info: %s", format_resend_error(dom_exc))
+
+            return (
+                f"Resend API is connected and verified! "
+                f"Sender: {RESEND_FROM_EMAIL}. {dom_summary}. "
+                f"To test actual email delivery, visit: /test-email?to=your_resend_account_email@gmail.com",
+                200,
+            )
         except Exception as exc:
-            app.logger.error("Resend API Diagnostic Error: %s: %s", type(exc).__name__, exc)
-            return f"Resend API Error ({type(exc).__name__}): {exc}", 500
+            formatted_err = format_resend_error(exc)
+            app.logger.error("Resend API Diagnostic Error: %s", formatted_err)
+            return f"Resend API Error ({formatted_err})", 500
 
     if not MAIL_EMAIL or not MAIL_PASSWORD:
         msg = "Neither RESEND_API_KEY nor MAIL_EMAIL/MAIL_PASSWORD is configured in environment variables."
