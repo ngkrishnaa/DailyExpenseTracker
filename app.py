@@ -74,6 +74,19 @@ def format_resend_error(exc):
     return f"[{err_code} - {err_type}] {err_msg}"
 
 
+def format_resend_user_error(exc):
+    """Produce a clear, helpful user-facing error message without exposing secrets."""
+    err_code = getattr(exc, "code", None)
+    err_msg = getattr(exc, "message", str(exc))
+    if err_code in (403, "403") or "only send testing emails" in err_msg.lower() or "verify a domain" in err_msg.lower():
+        return (
+            "Resend Sandbox Restriction: In testing mode (onboarding@resend.dev), "
+            "emails can only be delivered to your verified Resend account owner email. "
+            "To send verification emails to any recipient, verify a custom domain at resend.com/domains."
+        )
+    return "We could not send the verification email. Please try again."
+
+
 # -----------------------------------
 # SEND OTP EMAIL
 # -----------------------------------
@@ -614,7 +627,7 @@ def register():
         except Exception as err:
             app.logger.error("Registration OTP dispatch error: %s", format_resend_error(err))
             pending_registrations.pop(email, None)
-            flash("We could not send the verification email. Please try again.", "error")
+            flash(format_resend_user_error(err), "error")
             return render_template("register.html")
 
         # -----------------------------------
@@ -732,7 +745,7 @@ def resend_otp():
         flash("A new verification code has been sent to your email.", "success")
     except Exception as err:
         app.logger.error("Resend OTP dispatch error: %s", format_resend_error(err))
-        flash("We could not send a new verification code. Please try again.", "error")
+        flash(format_resend_user_error(err), "error")
 
     return redirect(url_for("verify_otp", email=email))
 
@@ -816,7 +829,7 @@ def forgot_password():
             except Exception as err:
                 app.logger.error("Password reset OTP dispatch error: %s", format_resend_error(err))
                 clear_password_reset_request()
-                flash("We could not send a password reset email. Please try again.", "error")
+                flash(format_resend_user_error(err), "error")
                 return render_template("forgot_password.html")
 
         flash(success_message, "success")
