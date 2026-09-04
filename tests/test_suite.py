@@ -1130,8 +1130,88 @@ class ExpenseFlowTestSuite(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         self.assertIn(b"This account uses Google sign-in. Please continue with Google.", res.data)
 
+    @patch("requests.post")
+    def test_google_callback_invalid_client_secret_error(self, mock_post):
+        mock_post.return_value.status_code = 401
+        mock_post.return_value.json.return_value = {
+            "error": "invalid_client",
+            "error_description": "The provided client secret is invalid."
+        }
+        with patch.object(app, "GOOGLE_CLIENT_ID", "mock_client_id_123"), \
+             patch.object(app, "GOOGLE_CLIENT_SECRET", "mock_secret_456"):
+            with self.client.session_transaction() as sess:
+                sess["google_oauth_state"] = "valid_state_token"
+
+            res = self.client.get("/login/google/callback?code=mock_code&state=valid_state_token", follow_redirects=True)
+            self.assertEqual(res.status_code, 200)
+            self.assertIn(b"The provided Google Client Secret is invalid", res.data)
+
+    @patch("requests.post")
+    def test_google_callback_redirect_uri_mismatch_error(self, mock_post):
+        mock_post.return_value.status_code = 400
+        mock_post.return_value.json.return_value = {
+            "error": "redirect_uri_mismatch",
+            "error_description": "Bad Request"
+        }
+        with patch.object(app, "GOOGLE_CLIENT_ID", "mock_client_id_123"), \
+             patch.object(app, "GOOGLE_CLIENT_SECRET", "mock_secret_456"):
+            with self.client.session_transaction() as sess:
+                sess["google_oauth_state"] = "valid_state_token"
+
+            res = self.client.get("/login/google/callback?code=mock_code&state=valid_state_token", follow_redirects=True)
+            self.assertEqual(res.status_code, 200)
+            self.assertIn(b"The redirect URI does not match Google Cloud Console settings", res.data)
+
+    @patch("requests.get")
+    @patch("requests.post")
+    def test_google_logout_and_relogin_flow(self, mock_post, mock_get):
+        google_email = f"google_logout_{datetime.now().strftime('%Y%m%d%H%M%S%f')}@gmail.com"
+        google_sub = f"google_sub_{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+
+        mock_post.return_value.status_code = 200
+        mock_post.return_value.json.return_value = {"access_token": "mock_token_abc"}
+
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = {
+            "sub": google_sub,
+            "email": google_email,
+            "email_verified": True,
+            "name": "Logout Relogin Tester",
+        }
+
+        with patch.object(app, "GOOGLE_CLIENT_ID", "mock_client_id_123"), \
+             patch.object(app, "GOOGLE_CLIENT_SECRET", "mock_secret_456"):
+            # Step 1: Initial Login / Registration with Google
+            with self.client.session_transaction() as sess:
+                sess["google_oauth_state"] = "state_flow_1"
+
+            res1 = self.client.get("/login/google/callback?code=code_1&state=state_flow_1", follow_redirects=True)
+            self.assertEqual(res1.status_code, 200)
+            self.assertIn(b"Account created successfully with Google", res1.data)
+            with self.client.session_transaction() as sess:
+                user_id = sess.get("user_id")
+                self.assertIsNotNone(user_id)
+                self.created_user_ids.append(user_id)
+
+            # Step 2: Logout
+            res_logout = self.client.post("/logout", follow_redirects=True)
+            self.assertEqual(res_logout.status_code, 200)
+            with self.client.session_transaction() as sess:
+                self.assertNotIn("user_id", sess)
+
+            # Step 3: Login again with Google
+            with self.client.session_transaction() as sess:
+                sess["google_oauth_state"] = "state_flow_2"
+
+            res2 = self.client.get("/login/google/callback?code=code_2&state=state_flow_2", follow_redirects=True)
+            self.assertEqual(res2.status_code, 200)
+            self.assertIn(b"Welcome back, Logout Relogin Tester!", res2.data)
+            with self.client.session_transaction() as sess:
+                self.assertEqual(sess.get("user_id"), user_id)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
 
