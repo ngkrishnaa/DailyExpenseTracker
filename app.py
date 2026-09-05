@@ -283,20 +283,14 @@ def get_db_connection_params():
     }
 
 
-db = mysql.connector.connect(**get_db_connection_params())
-
-
-def ensure_db_connection():
-    """Reconnect to MySQL if the connection has been lost (e.g. idle timeout)."""
-    global db
-    try:
-        db.ping(reconnect=True, attempts=3, delay=1)
-    except mysql.connector.Error:
-        db = mysql.connector.connect(**get_db_connection_params())
+_tracker_tables_initialized = False
 
 
 def initialize_tracker_tables():
     """Create all required tables in order, ensuring users exists before foreign keys."""
+    global _tracker_tables_initialized, db
+    if _tracker_tables_initialized or db is None:
+        return
     cursor = db.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
@@ -377,9 +371,33 @@ def initialize_tracker_tables():
     """)
     db.commit()
     cursor.close()
+    _tracker_tables_initialized = True
 
 
-initialize_tracker_tables()
+try:
+    db = mysql.connector.connect(**get_db_connection_params())
+    initialize_tracker_tables()
+except Exception as _db_init_err:
+    app.logger.warning("Database connection deferred at module import: %s", _db_init_err)
+    db = None
+
+
+def ensure_db_connection():
+    """Reconnect to MySQL if the connection has been lost (e.g. idle timeout or deferred init)."""
+    global db
+    try:
+        if db is not None:
+            db.ping(reconnect=True, attempts=3, delay=1)
+        else:
+            db = mysql.connector.connect(**get_db_connection_params())
+    except Exception:
+        db = mysql.connector.connect(**get_db_connection_params())
+
+    if not _tracker_tables_initialized and db is not None:
+        try:
+            initialize_tracker_tables()
+        except Exception as _tbl_err:
+            app.logger.warning("Deferred table initialization error: %s", _tbl_err)
 
 
 # -----------------------------------
@@ -2049,8 +2067,16 @@ def internal_error(error):
 
 @app.route("/test-db")
 def test_db():
-
-    return "Database connected successfully!"
+    try:
+        ensure_db_connection()
+        cursor = db.cursor()
+        cursor.execute("SELECT 1")
+        cursor.fetchone()
+        cursor.close()
+        return "Database connected successfully!"
+    except Exception as exc:
+        app.logger.error("test-db verification error: %s", exc)
+        return f"Database connection failed: {exc}", 500
 
 
 @app.route("/test-email")
