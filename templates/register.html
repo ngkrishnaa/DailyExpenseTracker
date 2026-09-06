@@ -80,15 +80,80 @@
                     {% endif %}
                 {% endwith %}
 
-                <form class="register-form" method="POST" action="{{ url_for('register') }}" style="display: none;">
+                <form class="register-form" method="POST" action="{{ url_for('register') }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <input type="text" id="name" name="name">
-                    <input type="email" id="email" name="email">
-                    <input type="password" id="password" name="password">
-                    <input type="password" id="confirm_password" name="confirm_password">
+                    <!-- Full Name -->
+                    <div class="input-group">
+                        <label for="name">Full Name</label>
+                        <div class="input-wrapper">
+                            <i class="fa-regular fa-user input-icon"></i>
+                            <input type="text" id="name" name="name" placeholder="Enter your full name" autocomplete="name" required>
+                        </div>
+                    </div>
+
+                    <!-- Email Address -->
+                    <div class="input-group">
+                        <label for="email">Email Address</label>
+                        <div class="input-wrapper">
+                            <i class="fa-regular fa-envelope input-icon"></i>
+                            <input type="email" id="email" name="email" placeholder="you@example.com" autocomplete="email" required>
+                        </div>
+                        <small>We will send a 6-digit verification code to this email address.</small>
+                    </div>
+
+                    <!-- Password -->
+                    <div class="input-group">
+                        <label for="password">Password</label>
+                        <div class="input-wrapper">
+                            <i class="fa-solid fa-lock input-icon"></i>
+                            <input type="password" id="password" name="password" placeholder="Create a strong password" autocomplete="new-password" required>
+                            <button type="button" class="password-toggle" onclick="togglePassword('password', this)">Show</button>
+                        </div>
+
+                        <!-- Requirements -->
+                        <div class="password-requirements">
+                            <div id="length-rule"><span>&#9675;</span> At least 8 characters</div>
+                            <div id="letter-rule"><span>&#9675;</span> At least 1 letter</div>
+                            <div id="number-rule"><span>&#9675;</span> At least 1 number</div>
+                        </div>
+
+                        <!-- Strength meter -->
+                        <div class="password-strength">
+                            <div class="strength-bars">
+                                <span></span>
+                                <span></span>
+                                <span></span>
+                                <span></span>
+                            </div>
+                            <span class="strength-text">Password strength</span>
+                        </div>
+                    </div>
+
+                    <!-- Confirm Password -->
+                    <div class="input-group">
+                        <label for="confirm_password">Confirm Password</label>
+                        <div class="input-wrapper">
+                            <i class="fa-solid fa-lock input-icon"></i>
+                            <input type="password" id="confirm_password" name="confirm_password" placeholder="Confirm your password" autocomplete="new-password" required>
+                            <button type="button" class="password-toggle" onclick="togglePassword('confirm_password', this)">Show</button>
+                        </div>
+                        <small id="password-match-message" class="password-match-message"></small>
+                    </div>
+
+                    <!-- Terms checkbox -->
+                    <label class="terms">
+                        <input type="checkbox" required>
+                        <span>I understand that ExpenseFlow will securely verify my email address to protect my account.</span>
+                    </label>
+
+                    <!-- Submit -->
+                    <button type="submit" class="register-submit">
+                        <span>Continue to Verification</span>
+                        <span class="submit-arrow"><i class="fa-solid fa-arrow-right"></i></span>
+                    </button>
                 </form>
 
-                <div class="auth-divider" style="display: none;">
+                <div class="auth-divider">
                     <span>or</span>
                 </div>
 

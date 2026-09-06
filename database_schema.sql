@@ -5,8 +5,26 @@ CREATE TABLE IF NOT EXISTS users (
     password VARCHAR(255) NULL,
     google_id VARCHAR(255) NULL,
     auth_provider VARCHAR(50) NOT NULL DEFAULT 'local',
+    has_set_password BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_users_google_id (google_id)
+);
+
+CREATE TABLE IF NOT EXISTS auth_otps (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    email VARCHAR(255) NOT NULL,
+    otp_hash VARCHAR(255) NOT NULL,
+    purpose VARCHAR(50) NOT NULL,
+    token VARCHAR(255) NULL,
+    metadata JSON NULL,
+    attempts INT NOT NULL DEFAULT 0,
+    max_attempts INT NOT NULL DEFAULT 5,
+    is_verified BOOLEAN NOT NULL DEFAULT FALSE,
+    is_used BOOLEAN NOT NULL DEFAULT FALSE,
+    expires_at DATETIME NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_otps_email_purpose (email, purpose),
+    INDEX idx_otps_token (token)
 );
 
 CREATE TABLE IF NOT EXISTS expenses (

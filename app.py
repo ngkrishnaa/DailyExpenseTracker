@@ -3,6 +3,7 @@ from functools import wraps
 import re
 import csv
 import io
+import json
 import hmac
 import urllib.parse as urlparse
 import mysql.connector
@@ -145,6 +146,10 @@ ExpenseFlow Team
     </div>
     """
 
+    if os.getenv("MOCK_EMAIL") == "1":
+        app.logger.info("[MOCK_EMAIL] Simulated registration OTP dispatch to %s", receiver_email)
+        return
+
     if RESEND_API_KEY:
         try:
             resend.api_key = RESEND_API_KEY
@@ -219,6 +224,10 @@ ExpenseFlow Team
         </p>
     </div>
     """
+
+    if os.getenv("MOCK_EMAIL") == "1":
+        app.logger.info("[MOCK_EMAIL] Simulated password reset OTP dispatch to %s", receiver_email)
+        return
 
     if RESEND_API_KEY:
         try:
@@ -300,6 +309,7 @@ def initialize_tracker_tables():
             password VARCHAR(255) NULL,
             google_id VARCHAR(255) NULL,
             auth_provider VARCHAR(50) NOT NULL DEFAULT 'local',
+            has_set_password BOOLEAN NOT NULL DEFAULT FALSE,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             INDEX idx_users_google_id (google_id)
         )
@@ -321,10 +331,39 @@ def initialize_tracker_tables():
         except Exception as mig_err:
             app.logger.warning("Migration note for auth_provider: %s", mig_err)
 
-    try:
-        cursor.execute("ALTER TABLE users MODIFY COLUMN password VARCHAR(255) NULL")
-    except Exception as mig_err:
-        app.logger.warning("Migration note for password column: %s", mig_err)
+    cursor.execute("SHOW COLUMNS FROM users LIKE 'has_set_password'")
+    if not cursor.fetchone():
+        try:
+            cursor.execute("ALTER TABLE users ADD COLUMN has_set_password BOOLEAN NOT NULL DEFAULT FALSE AFTER auth_provider")
+            cursor.execute("UPDATE users SET has_set_password = TRUE WHERE password IS NOT NULL AND password != '' AND auth_provider = 'local'")
+        except Exception as mig_err:
+            app.logger.warning("Migration note for has_set_password: %s", mig_err)
+
+    cursor.execute("SHOW COLUMNS FROM users WHERE Field = 'password' AND `Null` = 'YES'")
+    if not cursor.fetchone():
+        try:
+            cursor.execute("ALTER TABLE users MODIFY COLUMN password VARCHAR(255) NULL")
+        except Exception as mig_err:
+            app.logger.warning("Migration note for password column: %s", mig_err)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS auth_otps (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            email VARCHAR(255) NOT NULL,
+            otp_hash VARCHAR(255) NOT NULL,
+            purpose VARCHAR(50) NOT NULL,
+            token VARCHAR(255) NULL,
+            metadata JSON NULL,
+            attempts INT NOT NULL DEFAULT 0,
+            max_attempts INT NOT NULL DEFAULT 5,
+            is_verified BOOLEAN NOT NULL DEFAULT FALSE,
+            is_used BOOLEAN NOT NULL DEFAULT FALSE,
+            expires_at DATETIME NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_otps_email_purpose (email, purpose),
+            INDEX idx_otps_token (token)
+        )
+    """)
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS expenses (
@@ -410,6 +449,13 @@ def csrf_protect():
     if "csrf_token" not in session:
         session["csrf_token"] = secrets.token_hex(32)
 
+    # Force pending Google signups to set application password before accessing any protected pages
+    if session.get("user_id") and session.get("pending_password_setup"):
+        allowed = ("set_password", "logout", "static")
+        if request.endpoint and request.endpoint not in allowed:
+            flash("Please set an application password before accessing your dashboard.", "info")
+            return redirect(url_for("set_password"))
+
     if request.method in ("POST", "PUT", "DELETE", "PATCH"):
         if app.config.get("TESTING") and not app.config.get("WTF_CSRF_ENABLED", False):
             return None
@@ -431,6 +477,20 @@ def set_security_headers(response):
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     return response
+
+
+@app.teardown_request
+def cleanup_request_db_transaction(exception=None):
+    """Ensure every web request finalizes its MySQL transaction and releases locks."""
+    global db
+    if db is not None:
+        try:
+            if exception:
+                db.rollback()
+            else:
+                db.commit()
+        except Exception:
+            pass
 
 
 @app.context_processor
@@ -473,27 +533,110 @@ def inject_global_context():
 # AUTHENTICATION HELPERS
 # -----------------------------------
 
+def db_create_otp(email, otp, purpose, token=None, metadata=None, expiry_minutes=10, max_attempts=5):
+    """Persist OTP verification request into MySQL auth_otps, invalidating prior active codes."""
+    if db is None:
+        return
+    try:
+        cursor = db.cursor()
+        cursor.execute(
+            "UPDATE auth_otps SET is_used = TRUE WHERE email = %s AND purpose = %s AND is_used = FALSE",
+            (email, purpose),
+        )
+        otp_hash = generate_password_hash(otp)
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=expiry_minutes)
+        expires_at_str = expires_at.strftime("%Y-%m-%d %H:%M:%S")
+        meta_dict = dict(metadata or {})
+        if os.getenv("MOCK_EMAIL") == "1":
+            meta_dict["test_otp"] = otp
+        metadata_json = json.dumps(meta_dict) if meta_dict else None
+        cursor.execute(
+            """
+            INSERT INTO auth_otps (email, otp_hash, purpose, token, metadata, attempts, max_attempts, expires_at)
+            VALUES (%s, %s, %s, %s, %s, 0, %s, %s)
+            """,
+            (email, otp_hash, purpose, token, metadata_json, max_attempts, expires_at_str),
+        )
+        db.commit()
+        cursor.close()
+    except Exception as exc:
+        app.logger.warning("Error saving OTP to database: %s", exc)
+
+
+def db_invalidate_otps(email, purpose=None):
+    """Invalidate active OTP records for an email in MySQL."""
+    if db is None:
+        return
+    try:
+        cursor = db.cursor()
+        if purpose:
+            cursor.execute(
+                "UPDATE auth_otps SET is_used = TRUE WHERE email = %s AND purpose = %s AND is_used = FALSE",
+                (email, purpose),
+            )
+        else:
+            cursor.execute(
+                "UPDATE auth_otps SET is_used = TRUE WHERE email = %s AND is_used = FALSE",
+                (email,),
+            )
+        db.commit()
+        cursor.close()
+    except Exception as exc:
+        app.logger.warning("Error invalidating OTPs in database: %s", exc)
+
+
 def login_required(view):
     @wraps(view)
     def wrapped_view(*args, **kwargs):
         if "user_id" not in session:
             flash("Please log in to access your dashboard.", "error")
             return redirect(url_for("login"))
+        if session.get("pending_password_setup") and request.endpoint != "set_password":
+            flash("Please set an application password before accessing your dashboard.", "info")
+            return redirect(url_for("set_password"))
         return view(*args, **kwargs)
     return wrapped_view
 
 
 def get_active_password_reset_request():
-    """Return the active reset request for this browser, if it is still valid."""
+    """Return the active reset request for this browser, restoring from MySQL if needed."""
     reset_token = session.get("password_reset_token")
+    if not reset_token:
+        return None
+
     reset_request = password_reset_requests.get(reset_token)
+
+    if not reset_request and db is not None:
+        try:
+            cursor = db.cursor(dictionary=True)
+            cursor.execute(
+                "SELECT * FROM auth_otps WHERE token = %s AND purpose = 'password_reset' AND is_used = FALSE ORDER BY id DESC LIMIT 1",
+                (reset_token,)
+            )
+            row = cursor.fetchone()
+            cursor.close()
+            if row:
+                meta = json.loads(row["metadata"]) if row.get("metadata") else {}
+                expires = row["expires_at"]
+                if expires.tzinfo is None:
+                    expires = expires.replace(tzinfo=timezone.utc)
+                reset_request = {
+                    "user_id": meta.get("user_id"),
+                    "email": row["email"],
+                    "otp_hash": row["otp_hash"],
+                    "expires_at": expires,
+                    "attempts": row["attempts"],
+                    "verified": bool(row["is_verified"]),
+                }
+                password_reset_requests[reset_token] = reset_request
+        except Exception as exc:
+            app.logger.warning("Error fetching reset request from DB: %s", exc)
 
     if not reset_request:
         return None
 
     if datetime.now(timezone.utc) > reset_request["expires_at"]:
-        password_reset_requests.pop(reset_token, None)
-        session.pop("password_reset_token", None)
+        clear_password_reset_request()
         return None
 
     return reset_request
@@ -503,6 +646,17 @@ def clear_password_reset_request():
     reset_token = session.pop("password_reset_token", None)
     if reset_token:
         password_reset_requests.pop(reset_token, None)
+        if db is not None:
+            try:
+                cursor = db.cursor()
+                cursor.execute(
+                    "UPDATE auth_otps SET is_used = TRUE WHERE token = %s",
+                    (reset_token,)
+                )
+                db.commit()
+                cursor.close()
+            except Exception as exc:
+                app.logger.warning("Error marking reset token used in DB: %s", exc)
 
 
 @app.template_filter("inr")
@@ -678,6 +832,14 @@ def register():
             ),
             "attempts": 0,
         }
+        db_create_otp(
+            email=email,
+            otp=otp,
+            purpose="registration",
+            metadata={"name": name, "password": hashed_password},
+            expiry_minutes=REGISTRATION_OTP_EXPIRY_MINUTES,
+            max_attempts=REGISTRATION_OTP_MAX_ATTEMPTS,
+        )
 
 
         # -----------------------------------
@@ -689,6 +851,7 @@ def register():
         except Exception as err:
             app.logger.error("Registration OTP dispatch error: %s", format_resend_error(err))
             pending_registrations.pop(email, None)
+            db_invalidate_otps(email, "registration")
             flash(format_resend_user_error(err), "error")
             return render_template("register.html")
 
@@ -712,6 +875,33 @@ def register():
 def verify_otp():
     email = request.args.get("email", "").strip().lower()
 
+    # Restore from database if missing in-memory
+    if email and email not in pending_registrations and db is not None:
+        try:
+            cursor = db.cursor(dictionary=True)
+            cursor.execute(
+                "SELECT * FROM auth_otps WHERE email = %s AND purpose = 'registration' AND is_used = FALSE ORDER BY id DESC LIMIT 1",
+                (email,)
+            )
+            row = cursor.fetchone()
+            cursor.close()
+            if row:
+                meta = json.loads(row["metadata"]) if row.get("metadata") else {}
+                expires = row["expires_at"]
+                if expires.tzinfo is None:
+                    expires = expires.replace(tzinfo=timezone.utc)
+                if datetime.now(timezone.utc) <= expires:
+                    pending_registrations[email] = {
+                        "name": meta.get("name", ""),
+                        "password": meta.get("password", ""),
+                        "otp": "",  # Hashed in DB
+                        "otp_hash": row["otp_hash"],
+                        "expires_at": expires,
+                        "attempts": row["attempts"],
+                    }
+        except Exception as exc:
+            app.logger.warning("Error querying registration OTP from DB: %s", exc)
+
     # Check registration exists
     if not email or email not in pending_registrations:
         flash("Registration session expired or invalid. Please register again.", "error")
@@ -722,6 +912,7 @@ def verify_otp():
     # Check OTP expiration
     if datetime.now(timezone.utc) > registration["expires_at"]:
         pending_registrations.pop(email, None)
+        db_invalidate_otps(email, "registration")
         flash("Your verification code has expired. Please register again.", "error")
         return redirect(url_for("register"))
 
@@ -731,16 +922,24 @@ def verify_otp():
         # Check maximum attempts
         if registration["attempts"] >= REGISTRATION_OTP_MAX_ATTEMPTS:
             pending_registrations.pop(email, None)
+            db_invalidate_otps(email, "registration")
             flash("Too many incorrect codes. Please register again.", "error")
             return redirect(url_for("register"))
 
-        # Check OTP
-        if otp_entered != registration["otp"]:
+        # Check OTP (support either plaintext otp from memory or otp_hash from DB)
+        is_correct = False
+        if registration.get("otp") and otp_entered == registration["otp"]:
+            is_correct = True
+        elif registration.get("otp_hash") and check_password_hash(registration["otp_hash"], otp_entered):
+            is_correct = True
+
+        if not is_correct:
             registration["attempts"] += 1
             remaining_attempts = REGISTRATION_OTP_MAX_ATTEMPTS - registration["attempts"]
 
             if remaining_attempts <= 0:
                 pending_registrations.pop(email, None)
+                db_invalidate_otps(email, "registration")
                 flash("Too many incorrect codes. Please register again.", "error")
                 return redirect(url_for("register"))
 
@@ -754,8 +953,8 @@ def verify_otp():
         cursor = db.cursor()
         cursor.execute(
             """
-            INSERT INTO users (name, email, password)
-            VALUES (%s, %s, %s)
+            INSERT INTO users (name, email, password, auth_provider, has_set_password)
+            VALUES (%s, %s, %s, 'local', TRUE)
             """,
             (
                 registration["name"],
@@ -769,6 +968,7 @@ def verify_otp():
 
         # Remove temporary registration
         del pending_registrations[email]
+        db_invalidate_otps(email, "registration")
 
         # Start a logged-in session for the newly verified user.
         session.clear()
@@ -801,6 +1001,18 @@ def resend_otp():
         minutes=REGISTRATION_OTP_EXPIRY_MINUTES
     )
     pending_registrations[email]["attempts"] = 0
+
+    db_create_otp(
+        email=email,
+        otp=new_otp,
+        purpose="registration",
+        metadata={
+            "name": pending_registrations[email]["name"],
+            "password": pending_registrations[email]["password"],
+        },
+        expiry_minutes=REGISTRATION_OTP_EXPIRY_MINUTES,
+        max_attempts=REGISTRATION_OTP_MAX_ATTEMPTS,
+    )
 
     try:
         send_otp_email(email, new_otp)
@@ -912,17 +1124,17 @@ def google_callback():
         )
         if oauth_error == "invalid_client":
             flash(
-                "Google Sign-In configuration error: The provided Google Client Secret is invalid. "
+                "Google sign-in could not be completed. The provided Google Client Secret is invalid. "
                 "Please verify the client secret in your environment variables.",
                 "error",
             )
         elif oauth_error == "redirect_uri_mismatch":
             flash(
-                "Google Sign-In configuration error: The redirect URI does not match Google Cloud Console settings.",
+                "Google sign-in could not be completed. The redirect URI does not match Google Cloud Console settings.",
                 "error",
             )
         else:
-            flash("Failed to authenticate with Google. Please try again.", "error")
+            flash("Google sign-in could not be completed. Please try again.", "error")
         return redirect(url_for("login"))
 
     access_token = token_json["access_token"]
@@ -938,12 +1150,12 @@ def google_callback():
         userinfo = userinfo_resp.json()
     except Exception as exc:
         app.logger.error("Failed to connect to Google userinfo endpoint: %s", type(exc).__name__)
-        flash("Could not retrieve user profile from Google. Please try again.", "error")
+        flash("Google sign-in could not be completed. Please try again.", "error")
         return redirect(url_for("login"))
 
     if userinfo_resp.status_code != 200:
         app.logger.error("Google userinfo request failed with HTTP status %s", userinfo_resp.status_code)
-        flash("Failed to retrieve your Google profile. Please try again.", "error")
+        flash("Google sign-in could not be completed. Please try again.", "error")
         return redirect(url_for("login"))
 
     google_id = str(userinfo.get("sub", "")).strip()
@@ -966,14 +1178,14 @@ def google_callback():
         try:
             cursor = db.cursor(dictionary=True)
             cursor.execute(
-                "SELECT id, name, email, password, auth_provider, google_id FROM users WHERE google_id = %s",
+                "SELECT id, name, email, password, auth_provider, google_id, has_set_password FROM users WHERE google_id = %s",
                 (google_id,),
             )
             user_by_google_id = cursor.fetchone()
             cursor.close()
         except Exception as exc:
             app.logger.error("Database error querying user by google_id: %s", type(exc).__name__)
-            flash("A database error occurred. Please try again.", "error")
+            flash("Something went wrong. Please try again.", "error")
             return redirect(url_for("login"))
 
     if user_by_google_id:
@@ -989,22 +1201,22 @@ def google_callback():
     try:
         cursor = db.cursor(dictionary=True)
         cursor.execute(
-            "SELECT id, name, email, password, auth_provider, google_id FROM users WHERE email = %s",
+            "SELECT id, name, email, password, auth_provider, google_id, has_set_password FROM users WHERE email = %s",
             (email,),
         )
         existing_email_user = cursor.fetchone()
         cursor.close()
     except Exception as exc:
         app.logger.error("Database error querying user by email: %s", type(exc).__name__)
-        flash("A database error occurred. Please try again.", "error")
+        flash("Something went wrong. Please try again.", "error")
         return redirect(url_for("login"))
 
     if existing_email_user:
-        # CASE A & B: Email exists - safely link Google authentication to existing account
+        # CASE B: Email exists - safely link Google authentication to existing account
         try:
             update_cursor = db.cursor()
             update_cursor.execute(
-                "UPDATE users SET google_id = %s, auth_provider = 'google' WHERE id = %s",
+                "UPDATE users SET google_id = %s, auth_provider = 'google', has_set_password = IF(password IS NOT NULL AND password != '', TRUE, has_set_password) WHERE id = %s",
                 (google_id, existing_email_user["id"]),
             )
             db.commit()
@@ -1024,16 +1236,15 @@ def google_callback():
             flash("Your Google account has been securely linked. Welcome to ExpenseFlow!", "success")
         return redirect(url_for("dashboard"))
 
-    # CASE C: Email does not exist - create new Google account (no password required)
-    random_pw_hash = generate_password_hash(secrets.token_urlsafe(32))
+    # CASE C: Email does not exist - create new Google account
     try:
         insert_cursor = db.cursor()
         insert_cursor.execute(
             """
-            INSERT INTO users (name, email, password, google_id, auth_provider)
-            VALUES (%s, %s, %s, %s, 'google')
+            INSERT INTO users (name, email, password, google_id, auth_provider, has_set_password)
+            VALUES (%s, %s, NULL, %s, 'google', FALSE)
             """,
-            (name, email, random_pw_hash, google_id or None),
+            (name, email, google_id or None),
         )
         db.commit()
         user_id = insert_cursor.lastrowid
@@ -1043,7 +1254,7 @@ def google_callback():
             flash("An account with this email already exists. Please log in instead.", "error")
             return redirect(url_for("login"))
         app.logger.error("Database error inserting new Google user: %s", type(err).__name__)
-        flash("Could not create account. Please try again.", "error")
+        flash("Something went wrong. Please try again.", "error")
         return redirect(url_for("register"))
 
     session.clear()
@@ -1051,9 +1262,10 @@ def google_callback():
     session["user_id"] = user_id
     session["user_name"] = name
     session["user_email"] = email
+    session["pending_password_setup"] = True
 
-    flash("Account created successfully with Google. Welcome to ExpenseFlow!", "success")
-    return redirect(url_for("dashboard"))
+    flash("Account created successfully with Google. Please set an application password to complete your setup.", "success")
+    return redirect(url_for("set_password"))
 
 
 # -----------------------------------
@@ -1071,17 +1283,28 @@ def login():
 
         cursor = db.cursor(dictionary=True)
         cursor.execute(
-            "SELECT id, name, email, password, auth_provider, google_id FROM users WHERE email = %s",
+            "SELECT id, name, email, password, auth_provider, google_id, has_set_password FROM users WHERE email = %s",
             (email,)
         )
         user = cursor.fetchone()
         cursor.close()
 
-        if not user or not user["password"] or not check_password_hash(user["password"], password):
-            if user and user.get("google_id"):
-                flash("This account uses Google sign-in. Please continue with Google.", "error")
-            else:
-                flash("Invalid email or password.", "error")
+        if not user:
+            flash("Invalid email or password.", "error")
+            return render_template("login.html", email=email)
+
+        is_google_only = bool(
+            (user.get("google_id") and not user.get("has_set_password"))
+            or (user.get("auth_provider") == "google" and not user.get("has_set_password"))
+            or (not user.get("password"))
+        )
+
+        if is_google_only:
+            flash("This account uses Google sign-in. Please continue with Google. Please set an application password before using email/password login.", "error")
+            return render_template("login.html", email=email)
+
+        if not check_password_hash(user["password"], password):
+            flash("Invalid email or password.", "error")
             return render_template("login.html", email=email)
 
         session.clear()
@@ -1096,6 +1319,81 @@ def login():
     return render_template("login.html")
 
 
+# -----------------------------------
+# SET APPLICATION PASSWORD
+# -----------------------------------
+
+@app.route("/set-password", methods=["GET", "POST"])
+def set_password():
+    if "user_id" not in session:
+        flash("Please log in to set an application password.", "error")
+        return redirect(url_for("login"))
+
+    user_id = session["user_id"]
+    cursor = db.cursor(dictionary=True)
+    cursor.execute("SELECT id, name, email, has_set_password FROM users WHERE id = %s", (user_id,))
+    user = cursor.fetchone()
+    cursor.close()
+
+    if not user:
+        session.clear()
+        flash("User account not found. Please log in again.", "error")
+        return redirect(url_for("login"))
+
+    if request.method == "POST":
+        password = request.form.get("password", "")
+        confirm_password = request.form.get("confirm_password", "")
+
+        if len(password) < 8:
+            flash("Password must be at least 8 characters.", "error")
+            return render_template("set_password.html")
+        if not re.search(r"[A-Za-z]", password):
+            flash("Password must contain at least one letter.", "error")
+            return render_template("set_password.html")
+        if not re.search(r"[0-9]", password):
+            flash("Password must contain at least one number.", "error")
+            return render_template("set_password.html")
+        if password != confirm_password:
+            flash("Passwords do not match.", "error")
+            return render_template("set_password.html")
+
+        hashed_password = generate_password_hash(password)
+        cursor = db.cursor()
+        cursor.execute(
+            "UPDATE users SET password = %s, has_set_password = TRUE WHERE id = %s",
+            (hashed_password, user_id),
+        )
+        db.commit()
+        cursor.close()
+
+        session.pop("pending_password_setup", None)
+        flash("Your application password has been set successfully! Welcome to ExpenseFlow.", "success")
+        return redirect(url_for("dashboard"))
+
+    return render_template("set_password.html")
+
+
+@app.route("/test-auth-login-google")
+def test_auth_login_google():
+    if os.getenv("TEST_AUTH_MODE") != "1":
+        return "Not found", 404
+    email = request.args.get("email", "").strip().lower()
+    if not email:
+        return "Email required", 400
+    cursor = db.cursor(dictionary=True)
+    cursor.execute("SELECT id, name, email FROM users WHERE email = %s", (email,))
+    user = cursor.fetchone()
+    cursor.close()
+    if not user:
+        return "User not found", 404
+    session.clear()
+    session.permanent = True
+    session["user_id"] = user["id"]
+    session["user_name"] = user["name"]
+    session["user_email"] = user["email"]
+    session["pending_password_setup"] = True
+    flash("Account created successfully with Google. Please set an application password to complete your setup.", "success")
+    return redirect(url_for("set_password"))
 
 
 # -----------------------------------
@@ -1118,6 +1416,7 @@ def forgot_password():
         )
 
         clear_password_reset_request()
+        db_invalidate_otps(email, "password_reset")
         reset_token = secrets.token_urlsafe(32)
         otp = str(secrets.randbelow(900000) + 100000)
 
@@ -1125,6 +1424,8 @@ def forgot_password():
         # an address belongs to an account. Only registered users receive email.
         password_reset_requests[reset_token] = {
             "user_id": user["id"] if user else None,
+            "email": email,
+            "otp": otp,
             "otp_hash": generate_password_hash(otp),
             "expires_at": datetime.now(timezone.utc) + timedelta(
                 minutes=RESET_OTP_EXPIRY_MINUTES
@@ -1132,6 +1433,15 @@ def forgot_password():
             "attempts": 0,
             "verified": False,
         }
+        db_create_otp(
+            email=email,
+            otp=otp,
+            purpose="password_reset",
+            token=reset_token,
+            metadata={"user_id": user["id"] if user else None},
+            expiry_minutes=RESET_OTP_EXPIRY_MINUTES,
+            max_attempts=RESET_OTP_MAX_ATTEMPTS,
+        )
         session["password_reset_token"] = reset_token
 
         if user:
@@ -1140,6 +1450,7 @@ def forgot_password():
             except Exception as err:
                 app.logger.error("Password reset OTP dispatch error: %s", format_resend_error(err))
                 clear_password_reset_request()
+                db_invalidate_otps(email, "password_reset")
                 flash(format_resend_user_error(err), "error")
                 return render_template("forgot_password.html")
 
@@ -1157,7 +1468,7 @@ def verify_reset_otp():
         return redirect(url_for("forgot_password"))
 
     if request.method == "POST":
-        otp_entered = request.form["otp"].strip()
+        otp_entered = request.form.get("otp", "").strip()
 
         if reset_request["attempts"] >= RESET_OTP_MAX_ATTEMPTS:
             clear_password_reset_request()
@@ -1168,7 +1479,7 @@ def verify_reset_otp():
             reset_request["attempts"] += 1
             remaining_attempts = RESET_OTP_MAX_ATTEMPTS - reset_request["attempts"]
 
-            if remaining_attempts == 0:
+            if remaining_attempts <= 0:
                 clear_password_reset_request()
                 flash("Too many incorrect codes. Please request a new password reset code.", "error")
                 return redirect(url_for("forgot_password"))
@@ -1180,6 +1491,19 @@ def verify_reset_otp():
             return render_template("verify_reset_otp.html")
 
         reset_request["verified"] = True
+        reset_token = session.get("password_reset_token")
+        if reset_token and db is not None:
+            try:
+                cursor = db.cursor()
+                cursor.execute(
+                    "UPDATE auth_otps SET is_verified = TRUE WHERE token = %s",
+                    (reset_token,)
+                )
+                db.commit()
+                cursor.close()
+            except Exception as exc:
+                app.logger.warning("Error updating OTP verification status: %s", exc)
+
         flash("Code verified. Please create your new password.", "success")
         return redirect(url_for("reset_password"))
 
@@ -1215,14 +1539,19 @@ def reset_password():
 
         cursor = db.cursor()
         cursor.execute(
-            "UPDATE users SET password = %s WHERE id = %s",
+            "UPDATE users SET password = %s, has_set_password = TRUE WHERE id = %s",
             (generate_password_hash(password), reset_request["user_id"]),
         )
         db.commit()
         cursor.close()
 
+        email_to_clean = reset_request.get("email")
         clear_password_reset_request()
-        flash("Your password has been reset. You can now log in.", "success")
+        if email_to_clean:
+            db_invalidate_otps(email_to_clean, "password_reset")
+        session.clear()
+
+        flash("Your password has been reset and updated successfully. You can now log in.", "success")
         return redirect(url_for("login"))
 
     return render_template("reset_password.html")
@@ -2005,7 +2334,7 @@ def reports():
 def profile():
     user_id = current_user_id()
     cursor = db.cursor(dictionary=True)
-    cursor.execute("SELECT id, name, email, password FROM users WHERE id = %s", (user_id,))
+    cursor.execute("SELECT id, name, email, password, google_id, auth_provider, has_set_password FROM users WHERE id = %s", (user_id,))
     user = cursor.fetchone()
     cursor.close()
     if not user:
@@ -2028,21 +2357,27 @@ def profile():
                 flash("Profile updated successfully.", "success")
             return redirect(url_for("profile"))
         if action == "password":
-            current_password = request.form.get("current_password", "")
+            has_password = bool(user.get("password") and (user.get("has_set_password") or not user.get("google_id")))
             new_password = request.form.get("new_password", "")
             confirm_password = request.form.get("confirm_password", "")
-            if not check_password_hash(user["password"], current_password):
-                flash("Your current password is incorrect.", "error")
-            elif len(new_password) < 8 or not re.search(r"[A-Za-z]", new_password) or not re.search(r"[0-9]", new_password):
+
+            if has_password:
+                current_password = request.form.get("current_password", "")
+                if not check_password_hash(user["password"], current_password):
+                    flash("Your current password is incorrect.", "error")
+                    return redirect(url_for("profile"))
+
+            if len(new_password) < 8 or not re.search(r"[A-Za-z]", new_password) or not re.search(r"[0-9]", new_password):
                 flash("New password must contain 8 characters, a letter, and a number.", "error")
             elif new_password != confirm_password:
                 flash("New passwords do not match.", "error")
             else:
                 cursor = db.cursor()
-                cursor.execute("UPDATE users SET password = %s WHERE id = %s", (generate_password_hash(new_password), user_id))
+                cursor.execute("UPDATE users SET password = %s, has_set_password = TRUE WHERE id = %s", (generate_password_hash(new_password), user_id))
                 db.commit()
                 cursor.close()
-                flash("Password changed successfully.", "success")
+                msg = "Password changed successfully." if has_password else "Application password set successfully."
+                flash(msg, "success")
             return redirect(url_for("profile"))
     return render_template("profile.html", active_page="profile", user=user)
 

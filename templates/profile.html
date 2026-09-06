@@ -93,7 +93,7 @@
             </div>
             <div>
                 <span class="eyebrow">SECURITY CREDENTIALS</span>
-                <h2>Change Password</h2>
+                <h2>{% if user.has_set_password %}Change Password{% else %}Set Application Password{% endif %}</h2>
             </div>
         </div>
 
@@ -101,6 +101,7 @@
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="action" value="password">
 
+            {% if user.has_set_password %}
             <div class="form-field-group">
                 <label for="current_password">
                     <span>Current Password</span>
@@ -119,6 +120,13 @@
                     <button type="button" class="password-toggle" onclick="togglePassword('current_password', this)">Show</button>
                 </div>
             </div>
+            {% else %}
+            <div class="form-field-group">
+                <small class="field-hint" style="margin-bottom:12px;display:block;">
+                    Your account was created with Google. Setting an application password allows you to log in with your email and password as well.
+                </small>
+            </div>
+            {% endif %}
 
             <div class="form-field-group">
                 <label for="new_password">
@@ -163,7 +171,7 @@
             <div class="form-actions">
                 <button class="button button-secondary" type="submit">
                     <i class="fa-solid fa-lock"></i>
-                    <span>Update Password</span>
+                    <span>{% if user.has_set_password %}Update Password{% else %}Set Application Password{% endif %}</span>
                 </button>
             </div>
         </form>
