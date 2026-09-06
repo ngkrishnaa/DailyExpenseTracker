@@ -2,6 +2,7 @@ import unittest
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 import re
+import os
 from unittest.mock import patch
 
 import app
@@ -1210,8 +1211,156 @@ class ExpenseFlowTestSuite(unittest.TestCase):
                 self.assertEqual(sess.get("user_id"), user_id)
 
 
+class HttpsEmailProviderTestSuite(unittest.TestCase):
+    def setUp(self):
+        app.app.config["TESTING"] = True
+        app.app.config["WTF_CSRF_ENABLED"] = False
+        self.client = app.app.test_client()
+
+    @patch("requests.post")
+    def test_send_via_gmail_api_success(self, mock_post):
+        # 1st call: token refresh, 2nd call: message send
+        token_resp = unittest.mock.MagicMock()
+        token_resp.status_code = 200
+        token_resp.json.return_value = {"access_token": "mock_access_token_xyz"}
+
+        send_resp = unittest.mock.MagicMock()
+        send_resp.status_code = 200
+        send_resp.json.return_value = {"id": "gmail_msg_12345"}
+
+        mock_post.side_effect = [token_resp, send_resp]
+
+        with patch.object(app, "GOOGLE_CLIENT_ID", "mock_cid"), \
+             patch.object(app, "GOOGLE_CLIENT_SECRET", "mock_csec"), \
+             patch.object(app, "GMAIL_REFRESH_TOKEN", "mock_refresh"):
+            ok, msg_id = app.send_via_gmail_api("recipient@example.com", "Test Subject", "Test Text", "<p>Test Html</p>")
+            self.assertTrue(ok)
+            self.assertEqual(msg_id, "gmail_msg_12345")
+            self.assertEqual(mock_post.call_count, 2)
+
+    @patch("requests.post")
+    def test_send_via_gmail_api_token_failure(self, mock_post):
+        token_resp = unittest.mock.MagicMock()
+        token_resp.status_code = 400
+        token_resp.json.return_value = {"error_description": "invalid_grant"}
+        mock_post.return_value = token_resp
+
+        with patch.object(app, "GOOGLE_CLIENT_ID", "mock_cid"), \
+             patch.object(app, "GOOGLE_CLIENT_SECRET", "mock_csec"), \
+             patch.object(app, "GMAIL_REFRESH_TOKEN", "invalid_refresh"):
+            ok, err_msg = app.send_via_gmail_api("recipient@example.com", "Test Subject", "Test Text", "<p>Test Html</p>")
+            self.assertFalse(ok)
+            self.assertIn("OAuth token refresh HTTP 400", err_msg)
+
+    def test_send_via_gmail_api_missing_config(self):
+        with patch.object(app, "GOOGLE_CLIENT_ID", None), \
+             patch.object(app, "GMAIL_REFRESH_TOKEN", None), \
+             patch("app.get_app_setting", return_value=None):
+            ok, err_msg = app.send_via_gmail_api("recipient@example.com", "Test Subject", "Test Text", "<p>Test Html</p>")
+            self.assertFalse(ok)
+            self.assertIn("not fully configured", err_msg)
+
+    @patch("requests.post")
+    def test_send_via_emailjs_success(self, mock_post):
+        resp = unittest.mock.MagicMock()
+        resp.status_code = 200
+        mock_post.return_value = resp
+
+        with patch.object(app, "EMAILJS_SERVICE_ID", "svc_123"), \
+             patch.object(app, "EMAILJS_TEMPLATE_ID", "tmpl_456"), \
+             patch.object(app, "EMAILJS_PUBLIC_KEY", "pub_789"):
+            ok, res = app.send_via_emailjs("user@example.com", "Subject", "Body", "<p>Body</p>", otp="654321")
+            self.assertTrue(ok)
+            self.assertEqual(res, "ok")
+            mock_post.assert_called_once()
+            call_args = mock_post.call_args
+            payload = call_args[1]["json"]
+            self.assertEqual(payload["service_id"], "svc_123")
+            self.assertEqual(payload["template_params"]["otp"], "654321")
+
+    def test_send_via_emailjs_missing_config(self):
+        with patch.object(app, "EMAILJS_SERVICE_ID", None), \
+             patch("app.get_app_setting", return_value=None):
+            ok, res = app.send_via_emailjs("user@example.com", "Subject", "Body", "<p>Body</p>")
+            self.assertFalse(ok)
+            self.assertIn("not fully configured", res)
+
+    @patch("app.send_via_gmail_api")
+    def test_dispatch_email_prioritizes_gmail_api(self, mock_gmail):
+        mock_gmail.return_value = (True, "msg_id_111")
+        with patch.object(app, "GOOGLE_CLIENT_ID", "cid"), \
+             patch.object(app, "GOOGLE_CLIENT_SECRET", "sec"), \
+             patch.object(app, "GMAIL_REFRESH_TOKEN", "ref"):
+            app.dispatch_email("user@example.com", "Subject", "Body", "<p>Body</p>")
+            mock_gmail.assert_called_once()
+
+    @patch("app.send_via_emailjs")
+    @patch("app.send_via_gmail_api")
+    def test_dispatch_email_falls_back_to_emailjs(self, mock_gmail, mock_emailjs):
+        mock_gmail.return_value = (False, "Gmail rate limit")
+        mock_emailjs.return_value = (True, "ok")
+        with patch.object(app, "GOOGLE_CLIENT_ID", "cid"), \
+             patch.object(app, "GOOGLE_CLIENT_SECRET", "sec"), \
+             patch.object(app, "GMAIL_REFRESH_TOKEN", "ref"), \
+             patch.object(app, "EMAILJS_SERVICE_ID", "svc_1"):
+            app.dispatch_email("user@example.com", "Subject", "Body", "<p>Body</p>")
+            mock_gmail.assert_called_once()
+            mock_emailjs.assert_called_once()
+
+    def test_dispatch_email_mock_mode(self):
+        with patch.dict(os.environ, {"MOCK_EMAIL": "1"}):
+            # Should return cleanly without exceptions
+            app.dispatch_email("user@example.com", "Subject", "Body", "<p>Body</p>")
+
+    def test_app_settings_storage(self):
+        key = "test_setting_key_123"
+        val = "test_setting_value_abc"
+        ok = app.set_app_setting(key, val)
+        if ok:  # If MySQL is connected
+            retrieved = app.get_app_setting(key)
+            self.assertEqual(retrieved, val)
+
+    def test_admin_connect_gmail_redirect(self):
+        with patch.object(app, "GOOGLE_CLIENT_ID", "mock_client_id"), \
+             patch.object(app, "GOOGLE_CLIENT_SECRET", "mock_client_sec"):
+            res = self.client.get("/admin/connect-gmail")
+            self.assertEqual(res.status_code, 302)
+            self.assertIn("accounts.google.com", res.headers["Location"])
+            self.assertIn("gmail.send", res.headers["Location"])
+            self.assertIn("offline", res.headers["Location"])
+
+    @patch("requests.post")
+    def test_admin_connect_gmail_callback(self, mock_post):
+        mock_post.return_value.status_code = 200
+        mock_post.return_value.json.return_value = {
+            "access_token": "acc_tok",
+            "refresh_token": "new_refresh_tok_777",
+        }
+        with patch.object(app, "GOOGLE_CLIENT_ID", "mock_client_id"), \
+             patch.object(app, "GOOGLE_CLIENT_SECRET", "mock_client_sec"), \
+             patch("app.set_app_setting", return_value=True):
+            with self.client.session_transaction() as sess:
+                sess["gmail_sender_connect_state"] = "valid_connect_state"
+
+            res = self.client.get("/login/google/callback?code=mock_code&state=valid_connect_state", follow_redirects=True)
+            self.assertEqual(res.status_code, 200)
+            self.assertIn(b"Gmail API sender connected successfully", res.data)
+
+    def test_format_resend_user_error_sanitized(self):
+        # Even with sensitive internal errors, never leak passwords, tokens, or raw technical traces
+        class FakeException(Exception):
+            code = 403
+            message = "You can only send testing emails to verified address"
+        msg = app.format_resend_user_error(FakeException())
+        self.assertNotIn("password", msg.lower())
+        self.assertNotIn("token", msg.lower())
+        self.assertNotIn("api_key", msg.lower())
+        self.assertNotIn("gocspx", msg.lower())
+
+
 if __name__ == "__main__":
     unittest.main()
+
 
 
 

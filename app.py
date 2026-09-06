@@ -4,6 +4,7 @@ import re
 import csv
 import io
 import json
+import base64
 import hmac
 import urllib.parse as urlparse
 import mysql.connector
@@ -37,6 +38,18 @@ raw_google_client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
 GOOGLE_CLIENT_SECRET = raw_google_client_secret.strip().strip('"\'') if raw_google_client_secret else None
 raw_google_redirect_uri = os.getenv("GOOGLE_REDIRECT_URI")
 GOOGLE_REDIRECT_URI = raw_google_redirect_uri.strip().strip('"\'') if raw_google_redirect_uri else None
+
+raw_gmail_refresh = os.getenv("GMAIL_REFRESH_TOKEN")
+GMAIL_REFRESH_TOKEN = raw_gmail_refresh.strip().strip('"\'') if raw_gmail_refresh else None
+
+raw_emailjs_svc = os.getenv("EMAILJS_SERVICE_ID")
+EMAILJS_SERVICE_ID = raw_emailjs_svc.strip().strip('"\'') if raw_emailjs_svc else None
+raw_emailjs_tmpl = os.getenv("EMAILJS_TEMPLATE_ID")
+EMAILJS_TEMPLATE_ID = raw_emailjs_tmpl.strip().strip('"\'') if raw_emailjs_tmpl else None
+raw_emailjs_pub = os.getenv("EMAILJS_PUBLIC_KEY")
+EMAILJS_PUBLIC_KEY = raw_emailjs_pub.strip().strip('"\'') if raw_emailjs_pub else None
+raw_emailjs_priv = os.getenv("EMAILJS_PRIVATE_KEY")
+EMAILJS_PRIVATE_KEY = raw_emailjs_priv.strip().strip('"\'') if raw_emailjs_priv else None
 
 MAIL_EMAIL = os.getenv("MAIL_EMAIL")
 # Sanitize spaces if present in Gmail App Password for SMTP fallback
@@ -97,48 +110,194 @@ def format_resend_error(exc):
 
 
 def format_resend_user_error(exc):
-    """Produce a clear, helpful user-facing error message without exposing secrets."""
+    """Produce a clear, helpful user-facing error message without exposing secrets or technical traces."""
     err_code = getattr(exc, "code", None)
-    err_msg = getattr(exc, "message", str(exc))
-    # If explicitly in Resend sandbox without working SMTP configured
-    if err_code in (403, "403") or "only send testing emails" in err_msg.lower() or "verify a domain" in err_msg.lower():
-        if not (MAIL_EMAIL and MAIL_PASSWORD):
+    err_msg = getattr(exc, "message", str(exc)).lower()
+    if err_code in (403, "403") or "only send testing emails" in err_msg or "verify a domain" in err_msg:
+        refresh_token = os.getenv("GMAIL_REFRESH_TOKEN") or get_app_setting("gmail_refresh_token")
+        if not refresh_token and not (MAIL_EMAIL and MAIL_PASSWORD):
             return (
-                "Resend Sandbox Restriction: In testing mode (onboarding@resend.dev), "
-                "emails can only be delivered to your verified Resend account owner email. "
-                "To send verification emails to any recipient, verify a custom domain at resend.com/domains."
+                "Email delivery is in testing mode. Emails can currently only be sent to the administrator account. "
+                "Please connect the Gmail API sender via the admin connection page."
             )
     return "We could not send the verification email. Please try again."
 
 
-def dispatch_email(receiver_email, subject, plain_text, html_content):
+def send_via_gmail_api(receiver_email, subject, plain_text, html_content):
     """
-    Production-ready email dispatcher.
-    Prioritizes the working SMTP transport capable of delivering to arbitrary recipients.
-    Supports Resend with a verified custom domain if configured, with graceful fallback.
+    Send email via Google Gmail REST API (POST https://gmail.googleapis.com/gmail/v1/users/me/messages/send).
+    Operates over standard HTTPS (port 443), completely bypassing Railway SMTP firewall blocks.
+    Reaches arbitrary recipients with 100% native Google SPF and DKIM signatures at ₹0 cost.
+    """
+    refresh_token = GMAIL_REFRESH_TOKEN or os.getenv("GMAIL_REFRESH_TOKEN") or get_app_setting("gmail_refresh_token")
+    if not (refresh_token and GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET):
+        return False, "Gmail API credentials not fully configured"
+
+    try:
+        # 1. Obtain access token using refresh token
+        token_url = "https://oauth2.googleapis.com/token"
+        token_data = {
+            "client_id": GOOGLE_CLIENT_ID,
+            "client_secret": GOOGLE_CLIENT_SECRET,
+            "refresh_token": refresh_token,
+            "grant_type": "refresh_token",
+        }
+        resp = requests.post(token_url, data=token_data, timeout=10)
+        if resp.status_code != 200:
+            err_msg = f"OAuth token refresh HTTP {resp.status_code}"
+            try:
+                err_details = resp.json().get("error_description", resp.text)
+                err_msg += f": {err_details}"
+            except Exception:
+                pass
+            return False, err_msg
+
+        token_json = resp.json()
+        access_token = token_json.get("access_token")
+        if not access_token:
+            return False, "No access token in token response"
+
+        # 2. Build MIME message
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        sender_email = MAIL_EMAIL or "me"
+        msg["From"] = f"ExpenseFlow <{sender_email}>"
+        msg["To"] = receiver_email
+        msg.attach(MIMEText(plain_text, "plain", "utf-8"))
+        msg.attach(MIMEText(html_content, "html", "utf-8"))
+
+        # 3. Base64URL-encode RFC 2822 bytes
+        raw_message = base64.urlsafe_b64encode(msg.as_bytes()).decode("utf-8")
+
+        # 4. Send via Gmail REST API
+        send_url = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send"
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+        }
+        send_resp = requests.post(send_url, headers=headers, json={"raw": raw_message}, timeout=15)
+        if send_resp.status_code in (200, 201):
+            message_id = send_resp.json().get("id", "ok")
+            app.logger.info("Email '%s' sent successfully via Gmail REST API to %s (id: %s)", subject, receiver_email, message_id)
+            return True, message_id
+        else:
+            err_info = send_resp.text
+            try:
+                err_json = send_resp.json()
+                err_info = err_json.get("error", {}).get("message", send_resp.text)
+            except Exception:
+                pass
+            return False, f"Gmail API HTTP {send_resp.status_code}: {err_info}"
+    except Exception as exc:
+        return False, f"Gmail API exception: {type(exc).__name__}: {exc}"
+
+
+def send_via_emailjs(receiver_email, subject, plain_text, html_content, otp=None):
+    """
+    Send email via EmailJS REST API (POST https://api.emailjs.com/api/v1.0/email/send).
+    Secondary HTTPS fallback that delivers to arbitrary recipients without requiring a custom domain.
+    """
+    service_id = EMAILJS_SERVICE_ID or os.getenv("EMAILJS_SERVICE_ID") or get_app_setting("emailjs_service_id")
+    template_id = EMAILJS_TEMPLATE_ID or os.getenv("EMAILJS_TEMPLATE_ID") or get_app_setting("emailjs_template_id")
+    public_key = EMAILJS_PUBLIC_KEY or os.getenv("EMAILJS_PUBLIC_KEY") or get_app_setting("emailjs_public_key")
+    private_key = EMAILJS_PRIVATE_KEY or os.getenv("EMAILJS_PRIVATE_KEY") or get_app_setting("emailjs_private_key")
+
+    if not (service_id and template_id and public_key):
+        return False, "EmailJS not fully configured"
+
+    try:
+        payload = {
+            "service_id": service_id,
+            "template_id": template_id,
+            "user_id": public_key,
+            "template_params": {
+                "to_email": receiver_email,
+                "email": receiver_email,
+                "subject": subject,
+                "message": plain_text,
+                "html_content": html_content,
+                "otp": otp or "",
+            },
+        }
+        if private_key:
+            payload["accessToken"] = private_key
+
+        headers = {"Content-Type": "application/json"}
+        resp = requests.post("https://api.emailjs.com/api/v1.0/email/send", headers=headers, json=payload, timeout=15)
+        if resp.status_code == 200:
+            app.logger.info("Email '%s' sent successfully via EmailJS to %s", subject, receiver_email)
+            return True, "ok"
+        return False, f"EmailJS HTTP {resp.status_code}: {resp.text}"
+    except Exception as exc:
+        return False, f"EmailJS exception: {type(exc).__name__}: {exc}"
+
+
+def dispatch_email(receiver_email, subject, plain_text, html_content, otp=None):
+    """
+    Production-ready multi-provider email dispatcher.
+    Prioritizes HTTPS REST APIs to bypass cloud firewall port blocks without requiring custom domains.
+    1. Gmail REST API (Priority HTTPS, 500/day, no domain needed)
+    2. EmailJS REST API (Secondary HTTPS, 200/month, no domain needed)
+    3. Resend with verified custom domain (if custom domain configured)
+    4. Raw SMTP transport (used in local development where port 587 is unblocked)
+    5. Resend sandbox fallback (works for Resend account owner)
     """
     if os.getenv("MOCK_EMAIL") == "1":
         app.logger.info("[MOCK_EMAIL] Simulated email dispatch to %s with subject '%s'", receiver_email, subject)
         return
 
-    # Check if a custom verified Resend domain is configured (not onboarding@resend.dev sandbox)
+    errors = []
+
+    # 1. Gmail REST API (HTTPS port 443)
+    refresh_token = GMAIL_REFRESH_TOKEN or os.getenv("GMAIL_REFRESH_TOKEN") or get_app_setting("gmail_refresh_token")
+    if refresh_token and GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET:
+        ok, res = send_via_gmail_api(receiver_email, subject, plain_text, html_content)
+        if ok:
+            return
+        errors.append(f"Gmail API: {res}")
+        app.logger.warning("Gmail API delivery failed: %s", res)
+
+    # 2. EmailJS REST API (HTTPS port 443)
+    emailjs_svc = EMAILJS_SERVICE_ID or os.getenv("EMAILJS_SERVICE_ID") or get_app_setting("emailjs_service_id")
+    if emailjs_svc:
+        ok, res = send_via_emailjs(receiver_email, subject, plain_text, html_content, otp=otp)
+        if ok:
+            return
+        errors.append(f"EmailJS: {res}")
+        app.logger.warning("EmailJS delivery failed: %s", res)
+
+    # 3. Resend with verified custom domain
     has_custom_resend = bool(
         RESEND_API_KEY and
         RESEND_FROM_EMAIL and
         "onboarding@resend.dev" not in RESEND_FROM_EMAIL.lower() and
         "@resend.dev" not in RESEND_FROM_EMAIL.lower()
     )
+    if has_custom_resend:
+        try:
+            resend.api_key = RESEND_API_KEY
+            resp = resend.Emails.send({
+                "from": RESEND_FROM_EMAIL,
+                "to": [receiver_email],
+                "subject": subject,
+                "text": plain_text,
+                "html": html_content,
+            })
+            email_id = getattr(resp, "id", None) or (resp.get("id") if isinstance(resp, dict) else str(resp))
+            app.logger.info("Email '%s' sent via Resend API to %s. ID: %s", subject, receiver_email, email_id)
+            return
+        except Exception as exc:
+            errors.append(f"Resend custom domain: {format_resend_error(exc)}")
+            app.logger.warning("Resend custom domain delivery error: %s", format_resend_error(exc))
 
+    # 4. Raw SMTP transport (for local dev / unblocked ports)
     smtp_available = bool(MAIL_EMAIL and MAIL_PASSWORD)
-
-    # 1. Primary path: Use SMTP when configured (reliable delivery to arbitrary recipients)
     if smtp_available:
         try:
             msg = MIMEMultipart("alternative")
             msg["Subject"] = subject
             msg["From"] = f"ExpenseFlow <{MAIL_EMAIL}>"
             msg["To"] = receiver_email
-
             msg.attach(MIMEText(plain_text, "plain", "utf-8"))
             msg.attach(MIMEText(html_content, "html", "utf-8"))
 
@@ -152,32 +311,31 @@ def dispatch_email(receiver_email, subject, plain_text, html_content):
             app.logger.info("Email '%s' sent successfully via SMTP to %s", subject, receiver_email)
             return
         except Exception as exc:
-            app.logger.error("SMTP delivery error for '%s' to %s: %s: %s", subject, receiver_email, type(exc).__name__, exc)
-            if not has_custom_resend and not RESEND_API_KEY:
-                raise
+            errors.append(f"SMTP: {type(exc).__name__}: {exc}")
+            app.logger.warning("SMTP delivery error for '%s' to %s: %s: %s", subject, receiver_email, type(exc).__name__, exc)
 
-    # 2. Resend path (used if SMTP is not configured, or as fallback if custom domain exists)
+    # 5. Resend sandbox fallback (works ONLY for verified Resend account owner email)
     if RESEND_API_KEY:
         try:
             resend.api_key = RESEND_API_KEY
-            params = {
+            resp = resend.Emails.send({
                 "from": RESEND_FROM_EMAIL,
                 "to": [receiver_email],
                 "subject": subject,
                 "text": plain_text,
                 "html": html_content,
-            }
-            resp = resend.Emails.send(params)
+            })
             email_id = getattr(resp, "id", None) or (resp.get("id") if isinstance(resp, dict) else str(resp))
-            app.logger.info("Email '%s' sent via Resend API to %s. ID: %s", subject, receiver_email, email_id)
+            app.logger.info("Email '%s' sent via Resend sandbox to %s. ID: %s", subject, receiver_email, email_id)
             return
         except Exception as exc:
+            errors.append(f"Resend sandbox: {format_resend_error(exc)}")
             app.logger.error("Resend API delivery error in dispatch_email: %s", format_resend_error(exc))
             raise
 
-    # Neither configured
-    app.logger.error("Email Config Error: Neither working SMTP (MAIL_EMAIL/MAIL_PASSWORD) nor RESEND_API_KEY is configured.")
-    raise smtplib.SMTPException("Email delivery service is not configured.")
+    # If all options failed or are unconfigured
+    app.logger.error("Email Config Error: No email transport succeeded for %s. Errors: %s", receiver_email, " | ".join(errors))
+    raise RuntimeError(f"Email delivery service could not deliver message: {errors[-1] if errors else 'No provider configured'}")
 
 
 # -----------------------------------
@@ -218,7 +376,7 @@ ExpenseFlow Team
         </p>
     </div>
     """
-    dispatch_email(receiver_email, subject, plain_text, html_content)
+    dispatch_email(receiver_email, subject, plain_text, html_content, otp=otp)
 
 
 def send_password_reset_otp_email(receiver_email, otp):
@@ -254,7 +412,7 @@ ExpenseFlow Team
         </p>
     </div>
     """
-    dispatch_email(receiver_email, subject, plain_text, html_content)
+    dispatch_email(receiver_email, subject, plain_text, html_content, otp=otp)
 
 
 # -----------------------------------
@@ -402,6 +560,13 @@ def initialize_tracker_tables():
             INDEX idx_notifications_user_read (user_id, is_read, created_at)
         )
     """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS app_settings (
+            setting_key VARCHAR(100) PRIMARY KEY,
+            setting_value TEXT NOT NULL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        )
+    """)
     db.commit()
     cursor.close()
     _tracker_tables_initialized = True
@@ -431,6 +596,43 @@ def ensure_db_connection():
             initialize_tracker_tables()
         except Exception as _tbl_err:
             app.logger.warning("Deferred table initialization error: %s", _tbl_err)
+
+
+def get_app_setting(key, default=None):
+    """Retrieve a persistent application setting from the database."""
+    try:
+        ensure_db_connection()
+        if not db:
+            return default
+        cursor = db.cursor(dictionary=True)
+        cursor.execute("SELECT setting_value FROM app_settings WHERE setting_key = %s", (key,))
+        row = cursor.fetchone()
+        cursor.close()
+        if row and row.get("setting_value") is not None:
+            return row["setting_value"]
+    except Exception as exc:
+        app.logger.warning("Could not read app setting '%s': %s", key, exc)
+    return default
+
+
+def set_app_setting(key, value):
+    """Save or update a persistent application setting in the database."""
+    try:
+        ensure_db_connection()
+        if not db:
+            return False
+        cursor = db.cursor()
+        cursor.execute("""
+            INSERT INTO app_settings (setting_key, setting_value)
+            VALUES (%s, %s)
+            ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)
+        """, (key, str(value)))
+        db.commit()
+        cursor.close()
+        return True
+    except Exception as exc:
+        app.logger.error("Could not save app setting '%s': %s", key, exc)
+        return False
 
 
 # -----------------------------------
@@ -1059,8 +1261,84 @@ def google_login():
     return redirect(auth_url)
 
 
+@app.route("/admin/connect-gmail")
+def admin_connect_gmail():
+    """
+    1-Click connection route for the site owner to authorize Gmail API sending.
+    Requires no secrets or keys to be copied or pasted into chat.
+    """
+    if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
+        flash("Google OAuth credentials are not configured on the server.", "error")
+        return redirect(url_for("login"))
+
+    oauth_state = "gmail_sender_connect_" + secrets.token_urlsafe(24)
+    session["gmail_sender_connect_state"] = oauth_state
+
+    redirect_uri = get_google_redirect_uri()
+    params = {
+        "client_id": GOOGLE_CLIENT_ID,
+        "redirect_uri": redirect_uri,
+        "response_type": "code",
+        "scope": "openid email profile https://www.googleapis.com/auth/gmail.send",
+        "state": oauth_state,
+        "access_type": "offline",
+        "prompt": "consent",
+    }
+    auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{urlparse.urlencode(params)}"
+    return redirect(auth_url)
+
+
 @app.route("/login/google/callback")
 def google_callback():
+    state = request.args.get("state")
+    admin_state = session.get("gmail_sender_connect_state")
+
+    # Check if this callback is for connecting the Gmail API Sender
+    if admin_state and state and hmac.compare_digest(str(state), str(admin_state)):
+        session.pop("gmail_sender_connect_state", None)
+        error = request.args.get("error")
+        if error:
+            app.logger.warning("Gmail sender authorization was cancelled or denied: %s", error)
+            flash(f"Gmail sender authorization was cancelled or denied: {error}", "error")
+            return redirect(url_for("profile") if "user_id" in session else url_for("login"))
+
+        code = request.args.get("code")
+        if not code:
+            flash("Authorization code missing from Google.", "error")
+            return redirect(url_for("profile") if "user_id" in session else url_for("login"))
+
+        redirect_uri = get_google_redirect_uri()
+        token_url = "https://oauth2.googleapis.com/token"
+        token_data = {
+            "code": code,
+            "client_id": GOOGLE_CLIENT_ID,
+            "client_secret": GOOGLE_CLIENT_SECRET,
+            "redirect_uri": redirect_uri,
+            "grant_type": "authorization_code",
+        }
+        try:
+            token_resp = requests.post(token_url, data=token_data, timeout=10)
+            token_json = token_resp.json() if token_resp.status_code == 200 else {}
+        except Exception as exc:
+            app.logger.error("Failed to exchange code for Gmail refresh token: %s", exc)
+            flash("Could not connect to Google token service. Please try again.", "error")
+            return redirect(url_for("profile") if "user_id" in session else url_for("login"))
+
+        refresh_token = token_json.get("refresh_token")
+        if not refresh_token:
+            app.logger.warning("No refresh token returned by Google during Gmail connect. Response: %s", token_json)
+            flash("Google did not return a new refresh token. If previously authorized, revoke access at myaccount.google.com/permissions and retry.", "warning")
+            return redirect(url_for("profile") if "user_id" in session else url_for("login"))
+
+        save_ok = set_app_setting("gmail_refresh_token", refresh_token)
+        if save_ok:
+            app.logger.info("Successfully connected and saved Gmail API sender refresh token.")
+            flash("Gmail API sender connected successfully! OTP verification emails will now be sent via Gmail REST API to all recipients.", "success")
+        else:
+            flash("Obtained refresh token but failed to persist to database. Please check database connectivity.", "error")
+
+        return redirect(url_for("profile") if "user_id" in session else url_for("login"))
+
     if "user_id" in session:
         return redirect(url_for("dashboard"))
 
