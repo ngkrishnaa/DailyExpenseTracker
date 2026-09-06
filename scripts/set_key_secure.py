@@ -24,10 +24,10 @@ print("\nUpdating Railway environment variable...")
 proc = subprocess.run(
     [
         r".\scripts\railway_bin\railway.exe",
-        "variables",
-        "--set",
+        "variable",
+        "set",
         f"RESEND_API_KEY={key}",
-        "-s",
+        "--service",
         "DailyExpenseTracker",
         "-e",
         "production"

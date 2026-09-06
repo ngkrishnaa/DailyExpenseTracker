@@ -28,6 +28,7 @@
             {% if session.get('user_id') %}
                 <a class="login-btn" href="{{ url_for('dashboard') }}">Dashboard</a>
                 <form class="inline-form" method="POST" action="{{ url_for('logout') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button class="signup-btn" type="submit">Log out</button>
                 </form>
             {% else %}
