@@ -232,15 +232,82 @@ def send_via_emailjs(receiver_email, subject, plain_text, html_content, otp=None
         return False, f"EmailJS exception: {type(exc).__name__}: {exc}"
 
 
+def send_via_gas(receiver_email, subject, plain_text, html_content):
+    """
+    Send email via Google Apps Script Webhook.
+    Executes in the owner's personal Google account, requiring NO custom domain, NO Google Cloud IAM permissions,
+    and sending from ExpenseFlow via Google's native MailApp at ₹0 cost.
+    """
+    gas_url = os.getenv("GAS_WEBAPP_URL") or get_app_setting("gas_webapp_url")
+    if not gas_url:
+        return False, "GAS not configured"
+    try:
+        gas_secret = os.getenv("GAS_SECRET") or get_app_setting("gas_secret") or ""
+        payload = {
+            "secret": gas_secret,
+            "to": receiver_email,
+            "subject": subject,
+            "text": plain_text,
+            "html": html_content,
+        }
+        resp = requests.post(gas_url, json=payload, timeout=15)
+        if resp.status_code == 200:
+            try:
+                data = resp.json()
+                if data.get("status") == "success":
+                    app.logger.info("Email '%s' sent successfully via Google Apps Script to %s", subject, receiver_email)
+                    return True, "ok"
+                return False, f"GAS returned error: {data.get('error', resp.text)}"
+            except Exception:
+                return True, "ok"
+        return False, f"GAS HTTP {resp.status_code}: {resp.text}"
+    except Exception as exc:
+        return False, f"GAS exception: {type(exc).__name__}: {exc}"
+
+
+def send_via_brevo(receiver_email, subject, plain_text, html_content):
+    """
+    Send email via Brevo REST API (https://api.brevo.com/v3/smtp/email).
+    300 emails/day free forever over HTTPS port 443.
+    """
+    brevo_key = os.getenv("BREVO_API_KEY") or get_app_setting("brevo_api_key")
+    if not brevo_key:
+        return False, "Brevo API key not configured"
+    try:
+        sender_email = MAIL_EMAIL or "nandagopalakrishna72@gmail.com"
+        payload = {
+            "sender": {"name": "ExpenseFlow", "email": sender_email},
+            "to": [{"email": receiver_email}],
+            "subject": subject,
+            "htmlContent": html_content,
+            "textContent": plain_text,
+        }
+        headers = {
+            "api-key": brevo_key,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        resp = requests.post("https://api.brevo.com/v3/smtp/email", headers=headers, json=payload, timeout=15)
+        if resp.status_code in (200, 201):
+            msg_id = resp.json().get("messageId", "ok") if resp.status_code == 201 else "ok"
+            app.logger.info("Email '%s' sent successfully via Brevo API to %s (id: %s)", subject, receiver_email, msg_id)
+            return True, msg_id
+        return False, f"Brevo HTTP {resp.status_code}: {resp.text}"
+    except Exception as exc:
+        return False, f"Brevo exception: {type(exc).__name__}: {exc}"
+
+
 def dispatch_email(receiver_email, subject, plain_text, html_content, otp=None):
     """
     Production-ready multi-provider email dispatcher.
     Prioritizes HTTPS REST APIs to bypass cloud firewall port blocks without requiring custom domains.
     1. Gmail REST API (Priority HTTPS, 500/day, no domain needed)
-    2. EmailJS REST API (Secondary HTTPS, 200/month, no domain needed)
-    3. Resend with verified custom domain (if custom domain configured)
-    4. Raw SMTP transport (used in local development where port 587 is unblocked)
-    5. Resend sandbox fallback (works for Resend account owner)
+    2. Google Apps Script Webhook (HTTPS, 100/day, zero domain or IAM needed)
+    3. Brevo REST API (HTTPS, 300/day, zero domain needed)
+    4. EmailJS REST API (HTTPS, 200/month, zero domain needed)
+    5. Resend with verified custom domain (if custom domain configured)
+    6. Raw SMTP transport (used in local development where port 587 is unblocked)
+    7. Resend sandbox fallback (works for Resend account owner)
     """
     if os.getenv("MOCK_EMAIL") == "1":
         app.logger.info("[MOCK_EMAIL] Simulated email dispatch to %s with subject '%s'", receiver_email, subject)
@@ -257,7 +324,25 @@ def dispatch_email(receiver_email, subject, plain_text, html_content, otp=None):
         errors.append(f"Gmail API: {res}")
         app.logger.warning("Gmail API delivery failed: %s", res)
 
-    # 2. EmailJS REST API (HTTPS port 443)
+    # 2. Google Apps Script Webhook (HTTPS port 443)
+    gas_url = os.getenv("GAS_WEBAPP_URL") or get_app_setting("gas_webapp_url")
+    if gas_url:
+        ok, res = send_via_gas(receiver_email, subject, plain_text, html_content)
+        if ok:
+            return
+        errors.append(f"GAS: {res}")
+        app.logger.warning("GAS delivery failed: %s", res)
+
+    # 3. Brevo REST API (HTTPS port 443)
+    brevo_key = os.getenv("BREVO_API_KEY") or get_app_setting("brevo_api_key")
+    if brevo_key:
+        ok, res = send_via_brevo(receiver_email, subject, plain_text, html_content)
+        if ok:
+            return
+        errors.append(f"Brevo: {res}")
+        app.logger.warning("Brevo delivery failed: %s", res)
+
+    # 4. EmailJS REST API (HTTPS port 443)
     emailjs_svc = EMAILJS_SERVICE_ID or os.getenv("EMAILJS_SERVICE_ID") or get_app_setting("emailjs_service_id")
     if emailjs_svc:
         ok, res = send_via_emailjs(receiver_email, subject, plain_text, html_content, otp=otp)
@@ -266,7 +351,7 @@ def dispatch_email(receiver_email, subject, plain_text, html_content, otp=None):
         errors.append(f"EmailJS: {res}")
         app.logger.warning("EmailJS delivery failed: %s", res)
 
-    # 3. Resend with verified custom domain
+    # 5. Resend with verified custom domain
     has_custom_resend = bool(
         RESEND_API_KEY and
         RESEND_FROM_EMAIL and
