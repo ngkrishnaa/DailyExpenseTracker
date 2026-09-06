@@ -14,6 +14,8 @@ import os
 import random
 import secrets
 import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 import resend
 import requests
 from datetime import date, datetime, timedelta, timezone
@@ -98,13 +100,84 @@ def format_resend_user_error(exc):
     """Produce a clear, helpful user-facing error message without exposing secrets."""
     err_code = getattr(exc, "code", None)
     err_msg = getattr(exc, "message", str(exc))
+    # If explicitly in Resend sandbox without working SMTP configured
     if err_code in (403, "403") or "only send testing emails" in err_msg.lower() or "verify a domain" in err_msg.lower():
-        return (
-            "Resend Sandbox Restriction: In testing mode (onboarding@resend.dev), "
-            "emails can only be delivered to your verified Resend account owner email. "
-            "To send verification emails to any recipient, verify a custom domain at resend.com/domains."
-        )
+        if not (MAIL_EMAIL and MAIL_PASSWORD):
+            return (
+                "Resend Sandbox Restriction: In testing mode (onboarding@resend.dev), "
+                "emails can only be delivered to your verified Resend account owner email. "
+                "To send verification emails to any recipient, verify a custom domain at resend.com/domains."
+            )
     return "We could not send the verification email. Please try again."
+
+
+def dispatch_email(receiver_email, subject, plain_text, html_content):
+    """
+    Production-ready email dispatcher.
+    Prioritizes the working SMTP transport capable of delivering to arbitrary recipients.
+    Supports Resend with a verified custom domain if configured, with graceful fallback.
+    """
+    if os.getenv("MOCK_EMAIL") == "1":
+        app.logger.info("[MOCK_EMAIL] Simulated email dispatch to %s with subject '%s'", receiver_email, subject)
+        return
+
+    # Check if a custom verified Resend domain is configured (not onboarding@resend.dev sandbox)
+    has_custom_resend = bool(
+        RESEND_API_KEY and
+        RESEND_FROM_EMAIL and
+        "onboarding@resend.dev" not in RESEND_FROM_EMAIL.lower() and
+        "@resend.dev" not in RESEND_FROM_EMAIL.lower()
+    )
+
+    smtp_available = bool(MAIL_EMAIL and MAIL_PASSWORD)
+
+    # 1. Primary path: Use SMTP when configured (reliable delivery to arbitrary recipients)
+    if smtp_available:
+        try:
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = subject
+            msg["From"] = f"ExpenseFlow <{MAIL_EMAIL}>"
+            msg["To"] = receiver_email
+
+            msg.attach(MIMEText(plain_text, "plain", "utf-8"))
+            msg.attach(MIMEText(html_content, "html", "utf-8"))
+
+            with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as server:
+                server.ehlo()
+                server.starttls()
+                server.ehlo()
+                server.login(MAIL_EMAIL, MAIL_PASSWORD)
+                server.sendmail(MAIL_EMAIL, receiver_email, msg.as_string())
+
+            app.logger.info("Email '%s' sent successfully via SMTP to %s", subject, receiver_email)
+            return
+        except Exception as exc:
+            app.logger.error("SMTP delivery error for '%s' to %s: %s: %s", subject, receiver_email, type(exc).__name__, exc)
+            if not has_custom_resend and not RESEND_API_KEY:
+                raise
+
+    # 2. Resend path (used if SMTP is not configured, or as fallback if custom domain exists)
+    if RESEND_API_KEY:
+        try:
+            resend.api_key = RESEND_API_KEY
+            params = {
+                "from": RESEND_FROM_EMAIL,
+                "to": [receiver_email],
+                "subject": subject,
+                "text": plain_text,
+                "html": html_content,
+            }
+            resp = resend.Emails.send(params)
+            email_id = getattr(resp, "id", None) or (resp.get("id") if isinstance(resp, dict) else str(resp))
+            app.logger.info("Email '%s' sent via Resend API to %s. ID: %s", subject, receiver_email, email_id)
+            return
+        except Exception as exc:
+            app.logger.error("Resend API delivery error in dispatch_email: %s", format_resend_error(exc))
+            raise
+
+    # Neither configured
+    app.logger.error("Email Config Error: Neither working SMTP (MAIL_EMAIL/MAIL_PASSWORD) nor RESEND_API_KEY is configured.")
+    raise smtplib.SMTPException("Email delivery service is not configured.")
 
 
 # -----------------------------------
@@ -145,50 +218,7 @@ ExpenseFlow Team
         </p>
     </div>
     """
-
-    if os.getenv("MOCK_EMAIL") == "1":
-        app.logger.info("[MOCK_EMAIL] Simulated registration OTP dispatch to %s", receiver_email)
-        return
-
-    if RESEND_API_KEY:
-        try:
-            resend.api_key = RESEND_API_KEY
-            params = {
-                "from": RESEND_FROM_EMAIL,
-                "to": [receiver_email],
-                "subject": subject,
-                "text": plain_text,
-                "html": html_content,
-            }
-            resp = resend.Emails.send(params)
-            email_id = getattr(resp, "id", None) or (resp.get("id") if isinstance(resp, dict) else str(resp))
-            app.logger.info("OTP verification email sent via Resend HTTPS API. ID: %s", email_id)
-            return
-        except Exception as exc:
-            app.logger.error("Resend API delivery error in send_otp_email: %s", format_resend_error(exc))
-            raise
-
-    # Fallback to Gmail SMTP if RESEND_API_KEY is not configured
-    if not MAIL_EMAIL or not MAIL_PASSWORD:
-        app.logger.error("Email Config Error: Neither RESEND_API_KEY nor MAIL_EMAIL/MAIL_PASSWORD is configured.")
-        raise smtplib.SMTPException("Email delivery service is not configured.")
-
-    email_message = f"Subject: {subject}\n\n{plain_text}"
-    try:
-        with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as server:
-            server.starttls()
-            server.login(
-                MAIL_EMAIL,
-                MAIL_PASSWORD
-            )
-            server.sendmail(
-                MAIL_EMAIL,
-                receiver_email,
-                email_message
-            )
-    except Exception as exc:
-        app.logger.error("SMTP error in send_otp_email: %s: %s", type(exc).__name__, exc)
-        raise
+    dispatch_email(receiver_email, subject, plain_text, html_content)
 
 
 def send_password_reset_otp_email(receiver_email, otp):
@@ -224,43 +254,7 @@ ExpenseFlow Team
         </p>
     </div>
     """
-
-    if os.getenv("MOCK_EMAIL") == "1":
-        app.logger.info("[MOCK_EMAIL] Simulated password reset OTP dispatch to %s", receiver_email)
-        return
-
-    if RESEND_API_KEY:
-        try:
-            resend.api_key = RESEND_API_KEY
-            params = {
-                "from": RESEND_FROM_EMAIL,
-                "to": [receiver_email],
-                "subject": subject,
-                "text": plain_text,
-                "html": html_content,
-            }
-            resp = resend.Emails.send(params)
-            email_id = getattr(resp, "id", None) or (resp.get("id") if isinstance(resp, dict) else str(resp))
-            app.logger.info("Password reset OTP email sent via Resend HTTPS API. ID: %s", email_id)
-            return
-        except Exception as exc:
-            app.logger.error("Resend API delivery error in send_password_reset_otp_email: %s", format_resend_error(exc))
-            raise
-
-    # Fallback to Gmail SMTP if RESEND_API_KEY is not configured
-    if not MAIL_EMAIL or not MAIL_PASSWORD:
-        app.logger.error("Email Config Error: Neither RESEND_API_KEY nor MAIL_EMAIL/MAIL_PASSWORD is configured.")
-        raise smtplib.SMTPException("Email delivery service is not configured.")
-
-    email_message = f"Subject: {subject}\n\n{plain_text}"
-    try:
-        with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as server:
-            server.starttls()
-            server.login(MAIL_EMAIL, MAIL_PASSWORD)
-            server.sendmail(MAIL_EMAIL, receiver_email, email_message)
-    except Exception as exc:
-        app.logger.error("SMTP error in send_password_reset_otp_email: %s: %s", type(exc).__name__, exc)
-        raise
+    dispatch_email(receiver_email, subject, plain_text, html_content)
 
 
 # -----------------------------------
