@@ -1357,6 +1357,36 @@ class HttpsEmailProviderTestSuite(unittest.TestCase):
         self.assertNotIn("api_key", msg.lower())
         self.assertNotIn("gocspx", msg.lower())
 
+    def test_send_via_gas_missing_config(self):
+        with patch.dict(os.environ, {"GAS_WEBAPP_URL": ""}), patch("app.get_app_setting", return_value=None):
+            ok, msg = app.send_via_gas("user@example.com", "Sub", "Txt", "<p>Html</p>")
+            self.assertFalse(ok)
+            self.assertIn("not configured", msg)
+
+    @patch("requests.post")
+    def test_send_via_gas_success(self, mock_post):
+        mock_post.return_value.status_code = 200
+        mock_post.return_value.json.return_value = {"status": "success"}
+        with patch.dict(os.environ, {"GAS_WEBAPP_URL": "https://script.google.com/macros/s/mock/exec"}):
+            ok, msg = app.send_via_gas("user@example.com", "Sub", "Txt", "<p>Html</p>")
+            self.assertTrue(ok)
+            self.assertEqual(msg, "ok")
+
+    def test_send_via_brevo_missing_config(self):
+        with patch.dict(os.environ, {"BREVO_API_KEY": ""}), patch("app.get_app_setting", return_value=None):
+            ok, msg = app.send_via_brevo("user@example.com", "Sub", "Txt", "<p>Html</p>")
+            self.assertFalse(ok)
+            self.assertIn("not configured", msg)
+
+    @patch("requests.post")
+    def test_send_via_brevo_success(self, mock_post):
+        mock_post.return_value.status_code = 201
+        mock_post.return_value.json.return_value = {"messageId": "msg_brevo_12345"}
+        with patch.dict(os.environ, {"BREVO_API_KEY": "xkeysib-mock-key-123"}):
+            ok, msg = app.send_via_brevo("user@example.com", "Sub", "Txt", "<p>Html</p>")
+            self.assertTrue(ok)
+            self.assertEqual(msg, "msg_brevo_12345")
+
 
 if __name__ == "__main__":
     unittest.main()
