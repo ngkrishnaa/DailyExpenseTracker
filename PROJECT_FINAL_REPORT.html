@@ -1,0 +1,1002 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ExpenseFlow — Complete Project Documentation & Technical Report</title>
+<style>
+  :root {
+    --primary: #1e3a8a;
+    --primary-light: #3b82f6;
+    --text: #1f2937;
+    --text-muted: #4b5563;
+    --bg-subtle: #f8fafc;
+    --border: #e2e8f0;
+    --accent: #0284c7;
+    --code-bg: #0f172a;
+    --success: #059669;
+    --warning: #d97706;
+    --danger: #dc2626;
+  }
+  
+  * { box-sizing: border-box; }
+  
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--text);
+    line-height: 1.65;
+    background: #ffffff;
+    margin: 0;
+    padding: 0;
+    font-size: 15px;
+  }
+
+  .container {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 40px 30px;
+  }
+
+  /* Cover Page */
+  .cover-page {
+    text-align: center;
+    padding: 80px 20px 100px;
+    border-bottom: 3px solid var(--primary);
+    margin-bottom: 60px;
+    page-break-after: always;
+  }
+  
+  .cover-institution {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--primary);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 25px;
+  }
+
+  .cover-title {
+    font-size: 38px;
+    font-weight: 800;
+    color: #0f172a;
+    line-height: 1.2;
+    margin: 0 0 15px 0;
+  }
+
+  .cover-subtitle {
+    font-size: 20px;
+    color: var(--text-muted);
+    margin-bottom: 40px;
+    font-weight: 400;
+  }
+
+  .cover-meta-grid {
+    display: inline-grid;
+    grid-template-columns: auto auto;
+    gap: 12px 30px;
+    text-align: left;
+    background: var(--bg-subtle);
+    padding: 24px 35px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    margin-top: 30px;
+    font-size: 15px;
+  }
+
+  .cover-meta-label { font-weight: 700; color: #0f172a; }
+  .cover-meta-val { color: var(--primary); }
+
+  /* Headings */
+  h1 {
+    font-size: 26px;
+    color: var(--primary);
+    border-bottom: 2px solid var(--border);
+    padding-bottom: 8px;
+    margin-top: 50px;
+    margin-bottom: 20px;
+    page-break-after: avoid;
+  }
+
+  h2 {
+    font-size: 20px;
+    color: #0f172a;
+    margin-top: 35px;
+    margin-bottom: 14px;
+    border-left: 4px solid var(--primary-light);
+    padding-left: 12px;
+    page-break-after: avoid;
+  }
+
+  h3 {
+    font-size: 16px;
+    color: #1e293b;
+    margin-top: 25px;
+    margin-bottom: 10px;
+    page-break-after: avoid;
+  }
+
+  p, li {
+    color: var(--text);
+    font-size: 15px;
+  }
+
+  /* Tables */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0 30px;
+    font-size: 14px;
+    page-break-inside: avoid;
+  }
+
+  th, td {
+    padding: 10px 14px;
+    text-align: left;
+    border: 1px solid var(--border);
+    vertical-align: top;
+  }
+
+  th {
+    background-color: #f1f5f9;
+    color: #0f172a;
+    font-weight: 700;
+  }
+
+  tr:nth-child(even) { background-color: #f8fafc; }
+
+  /* Code & Preformatted Blocks */
+  code {
+    font-family: Consolas, Monaco, "Courier New", monospace;
+    background: #f1f5f9;
+    color: #0f172a;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 13px;
+  }
+
+  pre {
+    background: var(--code-bg);
+    color: #f8fafc;
+    padding: 18px;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-family: Consolas, Monaco, "Courier New", monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    margin: 18px 0;
+    page-break-inside: avoid;
+  }
+
+  pre code {
+    background: transparent;
+    color: inherit;
+    padding: 0;
+  }
+
+  /* Callouts & Badges */
+  .badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 9999px;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .badge-success { background: #dcfce7; color: #15803d; }
+  .badge-warning { background: #fef3c7; color: #b45309; }
+  .badge-danger { background: #fee2e2; color: #b91c1c; }
+  .badge-info { background: #e0f2fe; color: #0369a1; }
+
+  .callout {
+    background: var(--bg-subtle);
+    border-left: 4px solid var(--accent);
+    padding: 16px 20px;
+    margin: 20px 0;
+    border-radius: 0 8px 8px 0;
+  }
+
+  .callout-title {
+    font-weight: 700;
+    color: #0f172a;
+    margin-bottom: 5px;
+  }
+
+  /* Viva QA Box */
+  .qa-card {
+    background: #ffffff;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin-bottom: 18px;
+    page-break-inside: avoid;
+  }
+
+  .qa-question {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--primary);
+    margin-bottom: 8px;
+  }
+
+  .qa-short {
+    background: #f0fdf4;
+    border-left: 3px solid var(--success);
+    padding: 8px 12px;
+    border-radius: 0 4px 4px 0;
+    margin-bottom: 8px;
+    font-size: 14px;
+  }
+
+  .qa-short strong { color: #166534; }
+
+  .qa-detailed {
+    font-size: 14px;
+    color: var(--text-muted);
+    line-height: 1.55;
+  }
+
+  /* Table of Contents */
+  .toc-box {
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    padding: 24px 30px;
+    border-radius: 10px;
+    margin: 30px 0 50px;
+  }
+
+  .toc-box h2 {
+    margin-top: 0;
+    border-left: none;
+    padding-left: 0;
+    font-size: 18px;
+    color: var(--primary);
+  }
+
+  .toc-list {
+    columns: 2;
+    padding-left: 20px;
+    margin: 0;
+  }
+
+  .toc-list li {
+    margin-bottom: 8px;
+    font-size: 14px;
+  }
+
+  .toc-list a {
+    color: var(--primary);
+    text-decoration: none;
+    font-weight: 500;
+  }
+
+  .toc-list a:hover { text-decoration: underline; }
+
+  /* Print Specific Optimization */
+  @media print {
+    body { font-size: 12pt; color: #000; }
+    .container { max-width: 100%; padding: 0; }
+    .cover-page { height: 95vh; padding-top: 15vh; border-bottom: none; page-break-after: always; }
+    .page-break { page-break-before: always; }
+    h1 { page-break-before: always; margin-top: 0; }
+    pre { font-size: 10pt; white-space: pre-wrap; word-break: break-all; }
+    table { font-size: 10pt; }
+    a { color: #000; text-decoration: none; }
+    .no-print { display: none; }
+  }
+
+  .print-btn {
+    position: fixed;
+    bottom: 25px;
+    right: 25px;
+    background: var(--primary);
+    color: #ffffff;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 9999px;
+    font-weight: 700;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    cursor: pointer;
+    z-index: 1000;
+  }
+  .print-btn:hover { background: var(--primary-light); }
+</style>
+</head>
+<body>
+
+<button class="print-btn no-print" onclick="window.print()">🖨️ Print / Save as PDF</button>
+
+<div class="container">
+
+  <!-- COVER PAGE -->
+  <div class="cover-page">
+    <div class="cover-institution">Alliance University — Department of Computer Science & Engineering</div>
+    <div class="cover-title">ExpenseFlow: Modern Daily Expense Tracker & Financial Intelligence Platform</div>
+    <div class="cover-subtitle">Complete Project Documentation, Technical System Report & Viva Defense Handbook</div>
+    
+    <div class="cover-meta-grid">
+      <span class="cover-meta-label">Project Title:</span>
+      <span class="cover-meta-val">ExpenseFlow (DailyExpenseTracker)</span>
+      
+      <span class="cover-meta-label">Developer / Author:</span>
+      <span class="cover-meta-val">Nanda Gopala Krishna (ngkrishna72@gmail.com)</span>
+      
+      <span class="cover-meta-label">Technology Stack:</span>
+      <span class="cover-meta-val">Python 3.11+, Flask 3.1.3, MySQL 8.0, Google OAuth 2.0</span>
+      
+      <span class="cover-meta-label">Production Server:</span>
+      <span class="cover-meta-val">Gunicorn 23.0.0 on Railway Cloud PaaS</span>
+      
+      <span class="cover-meta-label">Live Deployment:</span>
+      <span class="cover-meta-val"><a href="https://dailyexpensetracker-production-bf76.up.railway.app" target="_blank">dailyexpensetracker-production-bf76.up.railway.app</a></span>
+      
+      <span class="cover-meta-label">Verification Status:</span>
+      <span class="cover-meta-val">56 / 56 Automated Tests Passing (100% Success)</span>
+      
+      <span class="cover-meta-label">Document Date:</span>
+      <span class="cover-meta-val">September 2026</span>
+    </div>
+  </div>
+
+  <!-- TABLE OF CONTENTS -->
+  <div class="toc-box no-print">
+    <h2>Table of Contents</h2>
+    <ol class="toc-list">
+      <li><a href="#ch1">Project Overview & Problem Statement</a></li>
+      <li><a href="#ch2">Complete Technology Stack Inventory</a></li>
+      <li><a href="#ch3">System Architecture & Topologies</a></li>
+      <li><a href="#ch4">Frontend Design & Template System</a></li>
+      <li><a href="#ch5">Flask Backend Routing Blueprint</a></li>
+      <li><a href="#ch6">Database Schema & Relational Integrity</a></li>
+      <li><a href="#ch7">Authentication & Google OAuth 2.0</a></li>
+      <li><a href="#ch8">OTP Verification Engine & Security</a></li>
+      <li><a href="#ch9">Production Email Architecture (₹0 HTTPS)</a></li>
+      <li><a href="#ch10">Budget Engine & Smart Alerts</a></li>
+      <li><a href="#ch11">Reports & Analytics Engine</a></li>
+      <li><a href="#ch12">Security Threat Mitigation Matrix</a></li>
+      <li><a href="#ch13">Deployment Pipeline on Railway</a></li>
+      <li><a href="#ch14">Testing Results & Verification</a></li>
+      <li><a href="#ch15">Technical Challenges & Solutions</a></li>
+      <li><a href="#ch16">Top Viva & Interview Questions (Q&A)</a></li>
+    </ol>
+  </div>
+
+  <!-- CHAPTER 1 -->
+  <h1 id="ch1">Chapter 1: Project Overview & Problem Statement</h1>
+  <h2>1.1 Project Purpose</h2>
+  <p><strong>ExpenseFlow</strong> is a production-deployed, full-stack personal finance web application built to empower users with intentional spending habits, automated monthly budgeting, and deep spending analytics. The application provides an elegant, distraction-free environment where individuals record multi-category transactions, set financial boundaries, receive real-time threshold warnings, and export clean financial reports.</p>
+
+  <h2>1.2 Problem Statement</h2>
+  <p>Over 70% of students and working professionals encounter end-of-month financial distress due to untracked micro-spending across multiple cash and digital channels (UPI, cards, net banking). Traditional tracking alternatives suffer from severe limitations:</p>
+  <ul>
+    <li><strong>Spreadsheet Friction:</strong> Excel and Google Sheets lack automated input validation, have poor mobile usability, and offer zero automated budget overrun alerts.</li>
+    <li><strong>Commercial App Privacy Invasions:</strong> Mainstream fintech apps (such as Cred, Walnut, or YNAB) aggressively demand access to personal SMS inboxes, bank logins, or credit bureau files to monetize user financial data.</li>
+    <li><strong>Device Lock-in:</strong> Many mobile apps store data locally on a single device without cloud synchronization or charge expensive recurring subscriptions for basic CSV exports.</li>
+  </ul>
+
+  <h2>1.3 Proposed Solution & Key Objectives</h2>
+  <p>ExpenseFlow solves these challenges by providing an institutional-grade, cloud-synchronized web platform with zero subscription costs and zero bank credential scraping. Key objectives include:</p>
+  <ul>
+    <li><strong>Universal Accessibility:</strong> Responsive web application accessible from any desktop, tablet, or smartphone browser.</li>
+    <li><strong>Dual Authentication:</strong> Standard email/password login verified by OTP alongside 1-click Google OAuth 2.0 social authentication.</li>
+    <li><strong>Budget Watchdog:</strong> Real-time budget progress calculation with 80% (Warning), 90% (Critical), and 100%+ (Exceeded) smart notifications.</li>
+    <li><strong>Exact Financial Math:</strong> Strict fixed-point arithmetic using <code>DECIMAL(12, 2)</code> preventing floating-point penny drift.</li>
+    <li><strong>Cloud Network Resilience:</strong> Zero-cost transactional email pipeline bypassing cloud host SMTP firewall blocks via Google Apps Script HTTPS Webhooks.</li>
+  </ul>
+
+  <!-- CHAPTER 2 -->
+  <h1 id="ch2">Chapter 2: Complete Technology Stack Inventory</h1>
+  <p>The following table lists every technology, library, and framework verified in the final implementation:</p>
+  
+  <table>
+    <thead>
+      <tr>
+        <th>Layer</th>
+        <th>Technology</th>
+        <th>Version</th>
+        <th>Role in ExpenseFlow</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Backend</strong></td>
+        <td>Python</td>
+        <td>3.11+ / 3.14</td>
+        <td>Core programming runtime utilizing standard cryptographic and math modules.</td>
+      </tr>
+      <tr>
+        <td><strong>Web Framework</strong></td>
+        <td>Flask</td>
+        <td>3.1.3</td>
+        <td>WSGI routing, request lifecycle hooks, and security middleware.</td>
+      </tr>
+      <tr>
+        <td><strong>WSGI Server</strong></td>
+        <td>Gunicorn</td>
+        <td>23.0.0</td>
+        <td>Production HTTP application server (1 worker, 8 threads) on Railway.</td>
+      </tr>
+      <tr>
+        <td><strong>Database</strong></td>
+        <td>MySQL</td>
+        <td>8.0</td>
+        <td>ACID-compliant relational database hosted on Railway Cloud.</td>
+      </tr>
+      <tr>
+        <td><strong>DB Driver</strong></td>
+        <td>mysql-connector-python</td>
+        <td>26.7.0</td>
+        <td>Official Oracle driver executing parameterized SQL queries.</td>
+      </tr>
+      <tr>
+        <td><strong>Frontend</strong></td>
+        <td>Jinja2</td>
+        <td>3.1.5</td>
+        <td>Server-side HTML rendering with auto-escaping and template inheritance.</td>
+      </tr>
+      <tr>
+        <td><strong>Charts</strong></td>
+        <td>Chart.js</td>
+        <td>4.4.1</td>
+        <td>HTML5 Canvas data visualization (Doughnut, Line trend, Monthly bar).</td>
+      </tr>
+      <tr>
+        <td><strong>Styling</strong></td>
+        <td>Custom Vanilla CSS</td>
+        <td>Native</td>
+        <td>78KB glassmorphic UI design system with responsive CSS Grid and Flexbox.</td>
+      </tr>
+      <tr>
+        <td><strong>Social Auth</strong></td>
+        <td>Google OAuth 2.0</td>
+        <td>v2</td>
+        <td>Social authentication code exchange with CSRF state token validation.</td>
+      </tr>
+      <tr>
+        <td><strong>Primary Email</strong></td>
+        <td>Google Apps Script</td>
+        <td>Webhook</td>
+        <td>HTTPS Port 443 webhook sending via native Google MailApp at ₹0 cost.</td>
+      </tr>
+      <tr>
+        <td><strong>Backup Email</strong></td>
+        <td>Gmail REST / Brevo</td>
+        <td>v1 / v3</td>
+        <td>Multi-provider fallback pipeline ensuring guaranteed OTP delivery.</td>
+      </tr>
+      <tr>
+        <td><strong>Testing</strong></td>
+        <td>Python unittest</td>
+        <td>Standard</td>
+        <td>Automated unit, integration, and security test suite (56 Tests Passing).</td>
+      </tr>
+      <tr>
+        <td><strong>Hosting</strong></td>
+        <td>Railway PaaS</td>
+        <td>Cloud</td>
+        <td>Containerized cloud hosting with automated GitHub CI/CD build triggers.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- CHAPTER 3 -->
+  <h1 id="ch3">Chapter 3: System Architecture & Topology</h1>
+  <p>ExpenseFlow employs a multi-tiered, decoupled cloud architecture designed for high availability and zero-cost operation:</p>
+
+  <pre><code>+---------------------------------------------------------------------------------------+
+|                                CLIENT TIER (User Device)                              |
+|       Desktop Browser (Chrome/Edge/Firefox)  |   Mobile Browser (iOS/Android Safari)  |
++-------------------------------------------+-------------------------------------------+
+                                            | HTTPS (Port 443 / TLS 1.3)
+                                            v
++---------------------------------------------------------------------------------------+
+|                            EDGE & WSGI TIER (Railway Cloud)                           |
+|       Railway Ingress Router (SSL Termination & ProxyFix Header Injection)             |
+|                                           |
+|       Gunicorn WSGI Server (1 Worker, 8 Concurrent Threads on internal $PORT)         |
++-------------------------------------------+-------------------------------------------+
+                                            |
+                                            v
++---------------------------------------------------------------------------------------+
+|                             APPLICATION TIER (Flask app.py)                           |
+|  * @app.before_request: CSRF Token Check (secrets.token_hex / hmac.compare_digest)    |
+|  * Security Headers: X-Frame-Options, X-Content-Type-Options: nosniff                 |
+|  * @login_required Decorator: Session Protection & Password Setup Guard               |
+|  * Controller Modules: Auth, Expense CRUD, Budget Watchdog, Analytics Exporter        |
++---------------------+-------------------------------------+---------------------------+
+                      |                                     |
+                      v                                     v
++-------------------------------------------+ +-----------------------------------------+
+|      DATA TIER (Railway Cloud MySQL)      | |   EXTERNAL HTTPS SERVICES (Port 443)    |
+|  * users (Credentials & OAuth IDs)        | |  * Google Apps Script Webhook (MailApp) |
+|  * expenses (Transactions with user FK)   | |  * Google OAuth 2.0 (Identity Services) |
+|  * budgets (Limits with UNIQUE month key) | |  * Brevo REST API (Standby Mailer)      |
+|  * auth_otps (PBKDF2-Hashed OTP Codes)    | |  * Chart.js CDN (Client Data Viz)       |
+|  * notifications (Smart Alert Records)    | |                                         |
++-------------------------------------------+ +-----------------------------------------+</code></pre>
+
+  <!-- CHAPTER 4 -->
+  <h1 id="ch4">Chapter 4: Frontend Design & Template System</h1>
+  <p>The user interface is constructed using Jinja2 template inheritance. A master template, <code>dashboard_base.html</code>, establishes the global navigation sidebar, mobile responsive drawer, alert notification bell badge, CSRF meta headers, and unified CSS styling.</p>
+
+  <h3>Key Pages & User Interaction:</h3>
+  <ul>
+    <li><strong>Landing Page (<code>/</code>):</strong> Public showcase presenting platform benefits and instant links to login or register.</li>
+    <li><strong>Dashboard (<code>/dashboard</code>):</strong> Central command center showing current month spending, monthly budget progress bar, category breakdown preview, and recent transaction ledger.</li>
+    <li><strong>Expenses View (<code>/expenses</code>):</strong> Data table featuring multi-parameter search (keyword, category, date range, min/max amounts) and pagination controls.</li>
+    <li><strong>Expense Form (<code>/expenses/add</code>, <code>/expenses/&lt;id&gt;/edit</code>):</strong> Add and edit modal forms enforcing server-validated categories and payment methods.</li>
+    <li><strong>Budget Planner (<code>/budget</code>):</strong> Dedicated interface for establishing and adjusting monthly spending ceilings with visual health indicators.</li>
+    <li><strong>Visual Reports (<code>/reports</code>):</strong> Dynamic analytics dashboard powered by Chart.js displaying category doughnuts, daily spending velocity lines, and monthly comparison bars.</li>
+  </ul>
+
+  <!-- CHAPTER 5 -->
+  <h1 id="ch5">Chapter 5: Flask Backend Routing Blueprint</h1>
+  <p>The backend controller registers <strong>30 distinct routes</strong> handling complete business logic, authentication guards, and data streaming:</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Route Pattern</th>
+        <th>Methods</th>
+        <th>Auth?</th>
+        <th>Purpose & Security Controls</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>/</code></td>
+        <td>GET</td>
+        <td>Public</td>
+        <td>Public landing view. Automatically redirects authenticated sessions to <code>/dashboard</code>.</td>
+      </tr>
+      <tr>
+        <td><code>/register</code></td>
+        <td>GET, POST</td>
+        <td>Public</td>
+        <td>User registration. Validates email format, checks duplicates, hashes OTP, triggers verification email.</td>
+      </tr>
+      <tr>
+        <td><code>/verify-otp</code></td>
+        <td>GET, POST</td>
+        <td>Public</td>
+        <td>Validates 6-digit registration code against PBKDF2 hash in <code>auth_otps</code>. Enforces 5-attempt limit.</td>
+      </tr>
+      <tr>
+        <td><code>/resend-otp</code></td>
+        <td>GET, POST</td>
+        <td>Public</td>
+        <td>Invalidates prior active OTP codes (<code>is_used=TRUE</code>) and issues a fresh code.</td>
+      </tr>
+      <tr>
+        <td><code>/login</code></td>
+        <td>GET, POST</td>
+        <td>Public</td>
+        <td>Local authentication. Verifies password hash in constant time; sets signed HTTP session cookie.</td>
+      </tr>
+      <tr>
+        <td><code>/login/google</code></td>
+        <td>GET</td>
+        <td>Public</td>
+        <td>Initiates Google OAuth 2.0 flow with random CSRF <code>state</code> parameter.</td>
+      </tr>
+      <tr>
+        <td><code>/login/google/callback</code></td>
+        <td>GET</td>
+        <td>Public</td>
+        <td>Validates OAuth state, exchanges authorization code for token, and links or registers Google user.</td>
+      </tr>
+      <tr>
+        <td><code>/logout</code></td>
+        <td>POST</td>
+        <td>Auth</td>
+        <td>Destroys session data, invalidates CSRF token, and safely redirects to login.</td>
+      </tr>
+      <tr>
+        <td><code>/forgot-password</code></td>
+        <td>GET, POST</td>
+        <td>Public</td>
+        <td>Initiates account recovery. Emits identical success message to prevent user enumeration.</td>
+      </tr>
+      <tr>
+        <td><code>/verify-reset-otp</code></td>
+        <td>GET, POST</td>
+        <td>Public</td>
+        <td>Verifies password reset OTP and binds verified reset token to user session.</td>
+      </tr>
+      <tr>
+        <td><code>/reset-password</code></td>
+        <td>GET, POST</td>
+        <td>Public</td>
+        <td>Sets new account password after authorized OTP verification; updates password hash in MySQL.</td>
+      </tr>
+      <tr>
+        <td><code>/set-password</code></td>
+        <td>GET, POST</td>
+        <td>Auth</td>
+        <td>Onboarding route forcing Google OAuth users to establish a local password for dual login access.</td>
+      </tr>
+      <tr>
+        <td><code>/dashboard</code></td>
+        <td>GET</td>
+        <td>Auth</td>
+        <td>Aggregates user metrics, computes monthly budget progress, and displays recent activity.</td>
+      </tr>
+      <tr>
+        <td><code>/expenses</code></td>
+        <td>GET</td>
+        <td>Auth</td>
+        <td>Paginated transaction ledger enforcing strict <code>user_id</code> query filtering.</td>
+      </tr>
+      <tr>
+        <td><code>/expenses/add</code></td>
+        <td>GET, POST</td>
+        <td>Auth</td>
+        <td>Inserts new transaction; triggers <code>generate_user_notifications()</code> budget evaluation.</td>
+      </tr>
+      <tr>
+        <td><code>/expenses/&lt;id&gt;/edit</code></td>
+        <td>GET, POST</td>
+        <td>Auth</td>
+        <td>Updates transaction. Strictly checks ownership (<code>WHERE id = %s AND user_id = %s</code>).</td>
+      </tr>
+      <tr>
+        <td><code>/expenses/&lt;id&gt;/delete</code></td>
+        <td>POST</td>
+        <td>Auth</td>
+        <td>Deletes transaction with ownership verification; CSRF protected.</td>
+      </tr>
+      <tr>
+        <td><code>/expenses/export</code></td>
+        <td>GET</td>
+        <td>Auth</td>
+        <td>Streams filtered expense records as downloadable CSV using in-memory <code>io.StringIO</code>.</td>
+      </tr>
+      <tr>
+        <td><code>/budget</code></td>
+        <td>GET, POST</td>
+        <td>Auth</td>
+        <td>Upserts monthly spending limit. Enforces one budget per user per month.</td>
+      </tr>
+      <tr>
+        <td><code>/reports</code></td>
+        <td>GET</td>
+        <td>Auth</td>
+        <td>Executes SQL aggregations and serializes datasets into Chart.js JSON structures.</td>
+      </tr>
+      <tr>
+        <td><code>/profile</code></td>
+        <td>GET, POST</td>
+        <td>Auth</td>
+        <td>Updates user name and changes password with current password verification.</td>
+      </tr>
+      <tr>
+        <td><code>/notifications/read-all</code></td>
+        <td>POST</td>
+        <td>Auth</td>
+        <td>Marks all unread notification badges as read for the authenticated user.</td>
+      </tr>
+      <tr>
+        <td><code>/test-db</code></td>
+        <td>GET</td>
+        <td>Public</td>
+        <td>Production health-check endpoint confirming active MySQL database socket connectivity.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- CHAPTER 6 -->
+  <h1 id="ch6">Chapter 6: Database Schema & Relational Integrity</h1>
+  <p>The relational schema is implemented in MySQL 8.0 across <strong>6 dedicated tables</strong>:</p>
+
+  <div class="callout">
+    <div class="callout-title">Relational Tables Summary</div>
+    <code>users</code> (Accounts) &bull; <code>expenses</code> (Transactions) &bull; <code>budgets</code> (Monthly limits) &bull; <code>notifications</code> (Alerts) &bull; <code>auth_otps</code> (Hashed verification codes) &bull; <code>app_settings</code> (Runtime configurations).
+  </div>
+
+  <h3>Data Integrity Highlights:</h3>
+  <ul>
+    <li><strong>Exact Fixed-Point Math:</strong> Transaction amounts use <code>DECIMAL(12, 2)</code> rather than binary floating-point (<code>FLOAT</code>/<code>DOUBLE</code>), preventing cumulative penny rounding errors.</li>
+    <li><strong>Referential Cascading:</strong> All child tables reference <code>users(id) ON DELETE CASCADE</code>, guaranteeing that purging a user automatically and atomically removes their associated expenses, budgets, and alerts.</li>
+    <li><strong>B-Tree Composite Indexing:</strong> Queries leverage composite indexes such as <code>idx_expenses_user_date (user_id, expense_date)</code> and <code>idx_expenses_user_category (user_id, category)</code> to perform O(log N) searches instead of slow O(N) table scans.</li>
+    <li><strong>Unique Relational Constraints:</strong> The <code>budgets</code> table enforces <code>UNIQUE KEY unique_user_month_budget (user_id, month, year)</code> at the database engine level, making duplicate budgets for the same month physically impossible.</li>
+  </ul>
+
+  <!-- CHAPTER 7 -->
+  <h1 id="ch7">Chapter 7: Authentication & Google OAuth 2.0</h1>
+  <p>ExpenseFlow implements dual-authentication architecture:</p>
+
+  <h3>1. Local Credential Authentication:</h3>
+  <p>Passwords are never stored in plaintext. They are transformed using Werkzeug's implementation of <strong>PBKDF2-SHA256</strong> with a unique 16-byte random salt. Password verification runs in constant time to prevent side-channel timing attacks.</p>
+
+  <h3>2. Google OAuth 2.0 Social Authentication:</h3>
+  <p>Implements the standard OAuth 2.0 Authorization Code Flow:</p>
+  <ol>
+    <li>User clicks "Sign in with Google" ➔ Flask generates a cryptographically random <code>state</code> token (via <code>secrets.token_urlsafe(24)</code>) and stores it in session.</li>
+    <li>User is redirected to Google Identity Services with client ID and state.</li>
+    <li>Google returns authorization code to <code>/login/google/callback?code=...&state=...</code>.</li>
+    <li>Flask validates the state parameter using <code>hmac.compare_digest</code> to completely neutralize Login CSRF attacks.</li>
+    <li>Flask sends an internal server-to-server POST to <code>https://oauth2.googleapis.com/token</code> to exchange the authorization code for an access token.</li>
+    <li>Flask queries <code>https://www.googleapis.com/oauth2/v2/userinfo</code> to obtain verified profile details.</li>
+    <li><strong>Automatic Account Linking:</strong> If the Google email matches an existing local user, the system links <code>google_id</code> to the existing account, preventing duplicate accounts and preserving existing expense history.</li>
+  </ol>
+
+  <!-- CHAPTER 8 -->
+  <h1 id="ch8">Chapter 8: OTP Verification Engine & Security</h1>
+  <p>The One-Time Password (OTP) verification engine powers both user registration and password recovery:</p>
+
+  <h3>Cryptographic Generation & Storage:</h3>
+  <ul>
+    <li><strong>Generation:</strong> 6-digit uniform numerical code generated via Python's CSPRNG: <code>secrets.randbelow(900000) + 100000</code>.</li>
+    <li><strong>Hashed Storage:</strong> The database <strong>never stores plaintext OTPs</strong>. Codes are hashed using PBKDF2-SHA256 before writing to <code>auth_otps</code>. If an attacker dumps the database, they obtain only irreversible hashes.</li>
+    <li><strong>10-Minute Expiration:</strong> Codes expire strictly 10 minutes after generation.</li>
+    <li><strong>5-Attempt Lockout:</strong> Failed attempts increment an attempt counter. If <code>attempts &gt;= 5</code>, the record is immediately invalidated (<code>is_used=TRUE</code>), preventing brute-force attacks (guessing probability is 5 in 900,000 = 0.00055%).</li>
+    <li><strong>Replay Prevention:</strong> Once verified or resent, prior codes are marked <code>is_used=TRUE</code>, preventing replay attacks.</li>
+  </ul>
+
+  <!-- CHAPTER 9 -->
+  <h1 id="ch9">Chapter 9: Production Email Architecture (₹0 HTTPS Solution)</h1>
+  
+  <h3>The Cloud Deployment Dilemma:</h3>
+  <p>When deploying to cloud platforms like Railway, standard SMTP connections to <code>smtp.gmail.com:587</code> hang and fail because cloud security groups <strong>permanently block outbound TCP ports 25, 465, and 587</strong> to prevent spam abuse. Furthermore, free API sandbox tiers (such as Resend) restrict email delivery exclusively to the developer's registered account, returning HTTP 403 when arbitrary end users register.</p>
+
+  <h3>The Engineered Solution: Google Apps Script Webhook</h3>
+  <p>To overcome both obstacles without purchasing custom domains or paid email APIs, we engineered an HTTPS Webhook using <strong>Google Apps Script</strong>:</p>
+
+  <pre><code>Railway Production Server (app.py)
+       |
+       | HTTPS POST (Standard Port 443 — Never Blocked)
+       | JSON Payload: {"to": recipient, "subject": sub, "text": txt, "html": html}
+       v
+Google Apps Script Webhook Endpoint (script.google.com)
+       |
+       | Executes inside Google's Datacenter via MailApp.sendEmail()
+       v
+User Inbox (Any Domain: Gmail, Outlook, Yahoo, Institutional)</code></pre>
+
+  <p><strong>Benefits:</strong> Bypasses cloud port blocks via Port 443; delivers up to 100 free emails per day to <em>any</em> recipient domain; authenticated by Google's native SPF/DKIM infrastructure; operates at ₹0 cost.</p>
+
+  <!-- CHAPTER 10 -->
+  <h1 id="ch10">Chapter 10: Budget Engine & Smart Alerts</h1>
+  <p>ExpenseFlow features an automated budget watchdog that evaluates spending health in real-time:</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Spending Ratio</th>
+        <th>Budget Status</th>
+        <th>Visual Indicator</th>
+        <th>System Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>0% &ndash; 79.9%</td>
+        <td>Normal Progress</td>
+        <td><span class="badge badge-success">Healthy (Green)</span></td>
+        <td>No warning; displays remaining balance.</td>
+      </tr>
+      <tr>
+        <td>80.0% &ndash; 89.9%</td>
+        <td>Approaching Limit</td>
+        <td><span class="badge badge-warning">Warning (Amber)</span></td>
+        <td>Generates in-app alert: "Approaching Limit (80%)".</td>
+      </tr>
+      <tr>
+        <td>90.0% &ndash; 99.9%</td>
+        <td>Critical Warning</td>
+        <td><span class="badge badge-warning">Critical (Orange)</span></td>
+        <td>Generates in-app alert: "Critical Budget Warning (90%)".</td>
+      </tr>
+      <tr>
+        <td>100.0%+</td>
+        <td>Budget Exceeded</td>
+        <td><span class="badge badge-danger">Exceeded (Red)</span></td>
+        <td>Generates urgent alert: "Budget Exceeded!".</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- CHAPTER 11 -->
+  <h1 id="ch11">Chapter 11: Reports & Analytics Engine</h1>
+  <p>The analytics engine executes SQL grouping queries directly in MySQL:</p>
+  <ul>
+    <li><strong>Category Distribution:</strong> <code>SELECT category, SUM(amount) FROM expenses GROUP BY category</code>. Injected into Chart.js to render a responsive Doughnut chart.</li>
+    <li><strong>Daily Spending Trend:</strong> <code>SELECT expense_date, SUM(amount) FROM expenses GROUP BY expense_date ORDER BY expense_date ASC</code>. Injected into Chart.js to render a smooth Line chart.</li>
+    <li><strong>Monthly Velocity:</strong> Month-over-month expenditure aggregated and rendered into a comparative Bar chart.</li>
+    <li><strong>CSV Data Streaming:</strong> Filtered transactions are streamed in-memory via Python's <code>io.StringIO</code> and downloaded directly without saving temporary files to server disk.</li>
+  </ul>
+
+  <!-- CHAPTER 12 -->
+  <h1 id="ch12">Chapter 12: Security Threat Mitigation Matrix</h1>
+  
+  <table>
+    <thead>
+      <tr>
+        <th>Security Threat</th>
+        <th>Vulnerability Type</th>
+        <th>Mitigation Applied in ExpenseFlow</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>SQL Injection</td>
+        <td>OWASP A03:2021</td>
+        <td>100% Parameterized queries (<code>cursor.execute(sql, params)</code>). Zero string concatenation.</td>
+      </tr>
+      <tr>
+        <td>Cross-Site Request Forgery</td>
+        <td>OWASP A01:2021</td>
+        <td>32-byte HMAC synchronizer token verified on all POST/PUT/DELETE requests.</td>
+      </tr>
+      <tr>
+        <td>Insecure Direct Object References</td>
+        <td>OWASP A01:2021</td>
+        <td>Mandatory session check: all CRUD queries enforce <code>WHERE user_id = session['user_id']</code>.</td>
+      </tr>
+      <tr>
+        <td>Credential Harvesting</td>
+        <td>OWASP A07:2021</td>
+        <td>PBKDF2-SHA256 password hashing with unique 16-byte random salts. Plaintext never stored.</td>
+      </tr>
+      <tr>
+        <td>OTP Brute Force</td>
+        <td>OWASP A07:2021</td>
+        <td>5-attempt lockout limit + 10-minute expiry window. Guessing probability is 0.00055%.</td>
+      </tr>
+      <tr>
+        <td>Cross-Site Scripting (XSS)</td>
+        <td>OWASP A03:2021</td>
+        <td>Jinja2 auto-escapes all rendered HTML entities by default.</td>
+      </tr>
+      <tr>
+        <td>Clickjacking</td>
+        <td>OWASP A05:2021</td>
+        <td>Enforces HTTP response header <code>X-Frame-Options: SAMEORIGIN</code>.</td>
+      </tr>
+      <tr>
+        <td>Session Hijacking</td>
+        <td>OWASP A07:2021</td>
+        <td>Signed cookies with <code>HttpOnly=True</code>, <code>SameSite="Lax"</code>, and <code>Secure=True</code>.</td>
+      </tr>
+      <tr>
+        <td>Information Leakage</td>
+        <td>OWASP A05:2021</td>
+        <td>Sanitized custom <code>error.html</code> templates suppressing raw tracebacks and database credentials.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- CHAPTER 13 -->
+  <h1 id="ch13">Chapter 13: Deployment Pipeline on Railway</h1>
+  <p>The application is deployed on <strong>Railway PaaS</strong> with automated Continuous Deployment:</p>
+  <ol>
+    <li>Developer executes <code>git push origin main</code> to GitHub.</li>
+    <li>Railway webhook detects commit and launches a container build.</li>
+    <li>Container builds Python 3.11+ environment and executes <code>pip install -r requirements.txt</code>.</li>
+    <li>Gunicorn starts via <code>Procfile</code>: <code>web: gunicorn --workers 1 --threads 8 --bind 0.0.0.0:$PORT app:app</code>.</li>
+    <li>Railway injects encrypted environment variables (<code>MYSQL_URL</code>, <code>FLASK_SECRET_KEY</code>, <code>GAS_WEBAPP_URL</code>).</li>
+    <li>Railway pings the container socket; upon receiving HTTP 200, it performs an atomic zero-downtime cutover.</li>
+  </ol>
+
+  <!-- CHAPTER 14 -->
+  <h1 id="ch14">Chapter 14: Testing Results & Verification</h1>
+  <p>The system is backed by an automated test suite in <code>tests/test_suite.py</code>:</p>
+
+  <div class="callout">
+    <div class="callout-title">Official Automated Test Results</div>
+    <code>Ran 56 tests in 14.819s &bull; OK (100% Passing &bull; 0 Failures &bull; 0 Errors)</code>
+  </div>
+
+  <p>Test categories include: User Registration & OTP limits (14 tests), Google OAuth state & linking (11 tests), Expense CRUD & Isolation (12 tests), Budget Watchdog & Alerts (8 tests), CSV Export & Filtering (5 tests), and Email Dispatcher Fallbacks (6 tests).</p>
+
+  <!-- CHAPTER 15 -->
+  <h1 id="ch15">Chapter 15: Technical Challenges & Engineering Lessons</h1>
+  <ul>
+    <li><strong>Challenge 1 (Cloud Host SMTP Block):</strong> Railway blocks ports 25, 465, and 587. <em>Resolved by routing transactional emails over standard HTTPS Port 443 via Google Apps Script.</em></li>
+    <li><strong>Challenge 2 (Resend Sandbox 403):</strong> Free Resend sandbox rejected arbitrary test users. <em>Resolved by leveraging Google Apps Script's universal delivery without domain requirements.</em></li>
+    <li><strong>Challenge 3 (Google Drive Multi-Account Collision):</strong> Authorizing Apps Script in a browser with multiple active Google accounts yielded "Sorry, unable to open file". <em>Resolved by deploying through an isolated Incognito session.</em></li>
+    <li><strong>Challenge 4 (MySQL Idle Disconnects):</strong> Railway terminates idle TCP connections. <em>Resolved by implementing active socket health pinging in <code>ensure_db_connection()</code>.</em></li>
+  </ul>
+
+  <!-- CHAPTER 16 -->
+  <h1 id="ch16">Chapter 16: Top Viva Voce & Technical Interview Questions</h1>
+  <p>Below are 15 critical questions and answers selected from the complete 55-question guide in <code>PROJECT_VIVA_QA.md</code>:</p>
+
+  <div class="qa-card">
+    <div class="qa-question">Q1: Why did you use DECIMAL(12, 2) instead of FLOAT for expense amounts?</div>
+    <div class="qa-short"><strong>SHORT ANSWER:</strong> FLOAT is an imprecise binary floating-point type that introduces rounding errors in financial balances. DECIMAL(12, 2) is an exact fixed-point type that guarantees penny-perfect accuracy.</div>
+    <div class="qa-detailed">In IEEE 754 binary floating-point representation, numbers like 0.10 cannot be stored precisely, resulting in values like 0.10000000000000000555. Adding thousands of transactions causes cumulative drift. DECIMAL(12, 2) stores numbers as exact binary-coded decimal digits, supporting up to 10 integer digits and 2 exact decimal places.</div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-question">Q2: How does the application prevent SQL Injection?</div>
+    <div class="qa-short"><strong>SHORT ANSWER:</strong> We strictly use parameterized SQL queries (cursor.execute(sql, (param1, param2))) across every database call. User input is never concatenated into SQL query strings.</div>
+    <div class="qa-detailed">The MySQL database protocol transmits the query blueprint and parameters in separate network packets. The database engine never interprets the parameters as executable SQL syntax, making SQL injection attacks mathematically impossible.</div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-question">Q3: Why did standard SMTP fail when deployed to Railway?</div>
+    <div class="qa-short"><strong>SHORT ANSWER:</strong> Cloud hosting providers like Railway permanently block outbound traffic on standard SMTP ports (25, 465, and 587) to prevent spammers from abusing their IP addresses.</div>
+    <div class="qa-detailed">While SMTP works locally because residential ISPs leave port 587 open, cloud platforms block raw TCP connections on mail ports. We resolved this by routing transactional emails over HTTPS port 443 to a Google Apps Script Webhook.</div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-question">Q4: Why do you hash OTP verification codes in MySQL?</div>
+    <div class="qa-short"><strong>SHORT ANSWER:</strong> Hashing ensures that if an attacker dumps the database, they cannot read active OTPs or hijack user accounts during password reset.</div>
+    <div class="qa-detailed">Just like passwords, temporary authentication codes are sensitive credentials. We store only the irreversible PBKDF2-SHA256 hash in auth_otps and evaluate candidates using check_password_hash(). Even with read access to the database, an attacker cannot reverse the hash within the 10-minute validity window.</div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-question">Q5: How does the system prevent Cross-Site Request Forgery (CSRF)?</div>
+    <div class="qa-short"><strong>SHORT ANSWER:</strong> We generate a 32-byte cryptographically random session token that must be submitted with every POST request and validated in constant time using hmac.compare_digest.</div>
+    <div class="qa-detailed">Every HTML form embeds a hidden CSRF token. When submitted, @app.before_request compares the form token against the user's signed session cookie using constant-time comparison. Because cross-origin sites cannot read the victim's session cookie due to SameSite policies, forged requests fail with HTTP 400.</div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-question">Q6: What is the purpose of the OAuth 2.0 state parameter?</div>
+    <div class="qa-short"><strong>SHORT ANSWER:</strong> The state parameter acts as a one-time CSRF token that prevents an attacker from tricking a victim into linking the attacker's Google account to the victim's session.</div>
+    <div class="qa-detailed">Without state validation, an attacker could initiate an OAuth flow, capture their authorization code, and trick a victim into clicking the callback URL. The victim's account would be bound to the attacker's Google login. Comparing the returned state against session memory ensures the entity completing the flow initiated it.</div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-question">Q7: How do you enforce data isolation between different users?</div>
+    <div class="qa-short"><strong>SHORT ANSWER:</strong> Every SQL query that reads, updates, or deletes expenses explicitly filters on WHERE user_id = session['user_id']. Users can never access another user's records.</div>
+    <div class="qa-detailed">We completely eliminate Insecure Direct Object References (IDOR). Even if an attacker authenticated as User 5 submits a POST request to /expenses/99/delete where expense 99 belongs to User 8, the query affects 0 rows because the WHERE clause checks both ID and user_id.</div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-question">Q8: What is Werkzeug ProxyFix and why is it needed on Railway?</div>
+    <div class="qa-short"><strong>SHORT ANSWER:</strong> ProxyFix inspects reverse proxy headers like X-Forwarded-Proto, informing Flask that it is running behind an HTTPS reverse proxy on Railway.</div>
+    <div class="qa-detailed">Railway terminates public HTTPS and forwards internal requests over plain HTTP. Without ProxyFix, Flask generates insecure http:// URLs, breaks Google OAuth redirect URI matching, and refuses to set Secure cookie flags.</div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-question">Q9: What happens if a user enters 5 incorrect OTP codes?</div>
+    <div class="qa-short"><strong>SHORT ANSWER:</strong> The system permanently invalidates the OTP record (is_used = TRUE), clears the reset session, and forces the user to request a brand new verification code.</div>
+    <div class="qa-detailed">This rate-limiting mechanism reduces the mathematical probability of guessing a 6-digit code to 5 in 900,000 (0.00055%), completely neutralizing automated brute-force attacks.</div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-question">Q10: Why did you choose Gunicorn with 1 worker and 8 threads?</div>
+    <div class="qa-short"><strong>SHORT ANSWER:</strong> Threads provide concurrent request handling while sharing memory-resident OTP and registration verification structures within a single Python process.</div>
+    <div class="qa-detailed">Running multiple separate worker processes without an external cache like Redis would cause in-memory state (like pending_registrations) to be inaccessible across workers. 1 worker with 8 threads handles concurrent web traffic while preserving process memory.</div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-question">Q11: What is ON DELETE CASCADE and why is it used?</div>
+    <div class="qa-short"><strong>SHORT ANSWER:</strong> It is a foreign key rule that automatically deletes all child records (expenses, budgets, notifications) when the parent user account is deleted.</div>
+    <div class="qa-detailed">Without ON DELETE CASCADE, deleting a user record would either trigger foreign key constraint errors or leave orphaned transaction records in the database with non-existent user_ids.</div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-question">Q12: How does CSV export work without creating temporary disk files?</div>
+    <div class="qa-short"><strong>SHORT ANSWER:</strong> The application uses Python's io.StringIO in-memory text buffer to stream CSV data directly to the client HTTP response.</div>
+    <div class="qa-detailed">Writing temporary files to server disk risks disk space exhaustion, race conditions, and permission issues. io.StringIO formats CSV rows in RAM and returns them as a streaming attachment response.</div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-question">Q13: How does the budget notification engine prevent duplicate alert spam?</div>
+    <div class="qa-short"><strong>SHORT ANSWER:</strong> Before creating an alert, the engine queries the notifications table to check if an alert of that specific type has already been emitted during the current month.</div>
+    <div class="qa-detailed">If a user is at 92% of their budget, recording another expense would otherwise trigger a redundant 90% warning on every page visit. Checking existing notification records ensures each threshold alert is emitted at most once per month.</div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-question">Q14: What is the live URL and deployment environment of ExpenseFlow?</div>
+    <div class="qa-short"><strong>SHORT ANSWER:</strong> The live production application is hosted at https://dailyexpensetracker-production-bf76.up.railway.app on Railway PaaS paired with a cloud MySQL database.</div>
+    <div class="qa-detailed">The deployment is automatically triggered from the main branch on GitHub, utilizing Nixpacks containerization, Gunicorn WSGI, and automated TLS certificate termination.</div>
+  </div>
+
+  <div class="qa-card">
+    <div class="qa-question">Q15: How many automated tests exist in the project?</div>
+    <div class="qa-short"><strong>SHORT ANSWER:</strong> There are 56 automated unit and integration tests in tests/test_suite.py, passing with a 100% success rate in under 15 seconds.</div>
+    <div class="qa-detailed">The test suite tests registration, OTP lockout limits, password hashing, Google OAuth state verification, account linking, expense CRUD, user isolation, search queries, CSV export, budget warnings, and email dispatchers.</div>
+  </div>
+
+  <hr style="margin: 50px 0 30px; border: 0; border-top: 2px solid var(--border);">
+  <p style="text-align: center; color: var(--text-muted); font-size: 13px;">
+    <strong>ExpenseFlow Project Documentation & Viva Defense Handbook</strong> &bull; Alliance University &bull; 2026<br>
+    Live Deployment: <a href="https://dailyexpensetracker-production-bf76.up.railway.app" target="_blank">dailyexpensetracker-production-bf76.up.railway.app</a>
+  </p>
+
+</div>
+
+</body>
+</html>
