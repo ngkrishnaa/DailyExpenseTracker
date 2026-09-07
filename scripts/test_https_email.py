@@ -31,10 +31,15 @@ def run_diagnostics(target_email):
         gmail_refresh = os.getenv("GMAIL_REFRESH_TOKEN") or get_app_setting("gmail_refresh_token")
         emailjs_svc = os.getenv("EMAILJS_SERVICE_ID") or get_app_setting("emailjs_service_id")
 
+        gas_url = os.getenv("GAS_WEBAPP_URL") or get_app_setting("gas_webapp_url")
+        brevo_key = os.getenv("BREVO_API_KEY") or get_app_setting("brevo_api_key")
+
         print("Configuration Status:")
         print(f"  Google Client ID: {'CONFIGURED' if GOOGLE_CLIENT_ID else 'MISSING'}")
         print(f"  Google Client Secret: {'CONFIGURED' if GOOGLE_CLIENT_SECRET else 'MISSING'}")
         print(f"  Gmail Refresh Token: {'CONFIGURED' if gmail_refresh else 'NOT YET CONNECTED'}")
+        print(f"  Google Apps Script URL: {'CONFIGURED' if gas_url else 'NOT CONFIGURED'}")
+        print(f"  Brevo API Key: {'CONFIGURED' if brevo_key else 'NOT CONFIGURED'}")
         print(f"  EmailJS Service ID: {'CONFIGURED' if emailjs_svc else 'NOT CONFIGURED'}")
         print(f"  Mail Email (Sender): {MAIL_EMAIL or 'NOT CONFIGURED'}")
         print(f"  Resend API Key: {'CONFIGURED' if RESEND_API_KEY else 'MISSING'}")

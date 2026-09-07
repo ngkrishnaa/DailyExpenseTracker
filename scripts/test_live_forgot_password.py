@@ -2,6 +2,7 @@ import urllib.request
 import urllib.parse
 import http.cookiejar
 import re
+import sys
 import ssl
 
 BASE_URL = "https://dailyexpensetracker-production-bf76.up.railway.app"
@@ -24,10 +25,10 @@ def test_live_forgot_password():
     csrf_token = match.group(1)
     print("Obtained CSRF token from live production.")
 
-    # 2. POST /forgot-password with an arbitrary recipient email
-    # Testing with arbitrary recipient email: test.expenseflow.verify@gmail.com
+    target_email = sys.argv[1] if len(sys.argv) > 1 else 'test.expenseflow.verify@gmail.com'
+    print(f"Testing forgot-password dispatch for: {target_email}")
     data = urllib.parse.urlencode({
-        'email': 'test.expenseflow.verify@gmail.com',
+        'email': target_email,
         'csrf_token': csrf_token
     }).encode('utf-8')
     
